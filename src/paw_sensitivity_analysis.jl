@@ -113,8 +113,11 @@ opts = Dict(
         :seed_geographic_separation]
 )
 
-for idx, metric in enumerate(metrics)
+for (idx, metric) in enumerate(metrics)
     si = ADRIA.sensitivity.pawn(rs, metric)
-    pawn_fig = ADRIA.viz.pawn(si; opts, fig_opts)
-    save("pawn_si_$(idx).png", pawn_fig)
+    f = Figure(; fig_opts...)
+    g = f[1, 1] = GridLayout()
+    ADRIA.viz.pawn!(g, si; opts)
+    Colorbar(g[1, 2]; colormap=:viridis, colorrange=(0, 1), label="Relative Sensitivity", height=Relative(0.65))
+    save("pawn_si_$(idx).png", f)
 end
