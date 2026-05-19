@@ -1,0 +1,141 @@
+#! format: off
+"""
+Run GBR-wide sims with ADRIA using the identified MCDA methods.
+
+Apply some analyses to identify which MCDA method produces outcomes above unguided
+scenarios, which are used as a baseline.
+"""
+
+using Revise, Infiltrator
+using WGLMakie, GeoMakie, GraphMakie
+using ADRIA
+using Statistics, Bootstrap, CSV, DataFrames
+
+
+dom = ADRIA.load_domain(ADRIA.RMEDomain, "../DataPackages/rme_ml_2025_02_11/rme_ml_2025_02_11", "45")
+
+ADRIA.fix_factor!(
+    dom;
+    N_seed_TA=Int64(50e6),
+    N_seed_CA=Int64(50e6),
+    N_seed_SM=Int64(50e6),
+    a_adapt=0.0,
+    seed_deployment_freq=1.0,
+    #cluster_max_member=1.0,
+    seed_years=75,
+    seed_year_start=5,
+    seed_wave_stress=0.0,
+    # seed_in_connectivity=0.0,
+    seed_out_connectivity=0.8,
+    # seed_coral_cover=0.0,
+    seed_depth=0.5,
+    SRM=0.0,
+    fogging=0.0,
+    plan_horizon=20.0
+)
+
+coral_params = CSV.read("coral_params.csv", DataFrame)
+for (name, value) in zip(names(coral_params), collect(values(coral_params[1,:])))
+    ADRIA.fix_factor!(dom, Symbol(name), value)
+end
+
+n_samples = 256
+cf_scens = ADRIA.sample_cf(dom, n_samples)
+ug_scens = ADRIA.sample_unguided(dom, n_samples)
+
+ADRIA.fix_factor!(dom; guided=1.0)
+cocoso_scens = ADRIA.sample_guided(dom, n_samples)
+
+ADRIA.fix_factor!(dom; guided=2.0)
+mairca_scens = ADRIA.sample_guided(dom, n_samples)
+
+ADRIA.fix_factor!(dom; guided=3.0)
+moora_scens = ADRIA.sample_guided(dom, n_samples)
+
+ADRIA.fix_factor!(dom; guided=4.0)
+piv_scens = ADRIA.sample_guided(dom, n_samples)
+
+ADRIA.fix_factor!(dom; guided=5.0)
+vikor_scens = ADRIA.sample_guided(dom, n_samples)
+
+scens = vcat(cf_scens, ug_scens, cocoso_scens, mairca_scens, moora_scens, piv_scens, vikor_scens)
+
+
+scale_params = CSV.read("scale_params.csv", DataFrame)
+for (name, value) in zip(names(scale_params), collect(values(scale_params[1,:])))
+    scens[:,name] = fill(value, size(scens, 1))
+end
+
+rs = ADRIA.run_scenarios(dom, scens, "45")
+
+
+# rs = ADRIA.run_scenarios(dom, scens, "45")
+rs = ADRIA.load_results("./Outputs/ReefMod__RCPs_45__2024-03-16_23_51_50_743")
+stac = ADRIA.metrics.scenario_total_cover(rs)
+ADRIA.viz.scenarios(rs, stac)
+
+# Plotting trajectories
+f = ADRIA.viz.scenarios(rs, stac[:, scens.guided .== -1.0])
+f0 = ADRIA.viz.scenarios(rs, stac[:, scens.guided .== 0.0])
+f1 = ADRIA.viz.scenarios(rs, stac[:, scens.guided .== 1.0])
+f2 = ADRIA.viz.scenarios(rs, stac[:, scens.guided .== 2.0])
+f3 = ADRIA.viz.scenarios(rs, stac[:, scens.guided .== 3.0])
+f4 = ADRIA.viz.scenarios(rs, stac[:, scens.guided .== 4.0])
+f5 = ADRIA.viz.scenarios(rs, stac[:, scens.guided .== 5.0])
+
+# Bootstrapped assessment against unguided scenarios
+n_timesteps = size(stac, 1)
+
+# Dims: Timestep, bootstrap mean/median, lower bound, upper bound, method
+guide_delta_mean = zeros(n_timesteps, 3, 5)
+guide_delta_median = zeros(n_timesteps, 3, 5)
+
+ug_scen_idx = findall(scens.guided .== 0.0)
+for guided_method in 1:5
+    guided_scen_idx = findall(scens.guided .== guided_method)
+
+    b_sample = zeros(1000, 2)
+
+    # Bootstrap each timestep
+    for n in axes(stac, 1)
+        for s in axes(b_sample, 1)
+            shuf_set = shuffle(guided_scen_idx)
+            ug_scen_idx = shuffle(ug_scen_idx)
+            delta = stac[n, shuf_set] .- stac[n, ug_scen_idx]
+
+            b_sample[s, 1] = mean(delta)
+            b_sample[s, 2] = median(delta)
+        end
+
+        # bootstrap mean/median for each shuffled sample
+        guide_delta_mean[n, :, guided_method] .= collect(Iterators.flatten(confint(bootstrap(mean, b_sample[:, 1], BalancedSampling(100)), PercentileConfInt(0.95))))
+        guide_delta_median[n, :, guided_method] .= collect(Iterators.flatten(confint(bootstrap(median, b_sample[:, 2], BalancedSampling(100)), PercentileConfInt(0.95))))
+    end
+
+    mean_count = count(guide_delta_mean[:, 1, guided_method] .> 0.0)
+    median_count = count(guide_delta_median[:, 1, guided_method] .> 0.0)
+
+    # Report the number of times the mean/median delta was > 0
+    @info """
+        $(string(ADRIA.mcda_methods()[guided_method])) - N timesteps where delta > 0:
+        mean: $(mean_count) ($(round((mean_count / n_timesteps) * 100.0, digits=2))%)
+        median: $(median_count) ($(round((median_count / n_timesteps) * 100.0, digits=2))%)
+    """
+end
+
+# N timesteps is 79
+# ┌ Info:     CocosoMethod - N timesteps where delta > 0:
+# │     mean: 24 (30.38%)
+# └     median: 33 (41.77%)
+# ┌ Info:     MaircaMethod - N timesteps where delta > 0:
+# │     mean: 38 (48.1%)
+# └     median: 39 (49.37%)
+# ┌ Info:     MooraMethod - N timesteps where delta > 0:
+# │     mean: 31 (39.24%)
+# └     median: 40 (50.63%)
+# ┌ Info:     PIVMethod - N timesteps where delta > 0:
+# │     mean: 52 (65.82%)
+# └     median: 49 (62.03%)
+# ┌ Info:     VikorMethod - N timesteps where delta > 0:
+# │     mean: 26 (32.91%)
+# └     median: 38 (48.1%)
