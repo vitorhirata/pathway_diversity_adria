@@ -15,7 +15,7 @@ RME_path = "/home/vitor/Code/ADRIA.jl/DataPackages/GBR_MCB_GBR_2026-03-30_v080/"
 calib_path = "/home/vitor/Code/ADRIA.jl/DataPackages/calibrated_params.nc"
 RCP = "45" # RCP 26, 45, 70
 
-dom = ADRIA.load_domain(RME_path, RCP; calib_params_fn = calib_path)
+dom = ADRIA.load_domain(RME_path, RCP; calib_params_fn=calib_path)
 
 ms = ADRIA.model_spec(dom)
 
@@ -52,13 +52,13 @@ ADRIA.fix_factor!(dom;
 # Set bounds for parameters: min_iv_locations
 ADRIA.set_factor_bounds!(dom;
     min_iv_locations=(10, 1000),
-    seed_heat_stress=(0.0,1.0),
-    seed_in_connectivity=(0.0,1.0),
-    seed_out_connectivity=(0.0,1.0),
-    seed_depth=(0.0,1.0),
-    seed_coral_cover=(0.0,1.0),
-    seed_cluster_diversity=(0.0,1.0),
-    seed_geographic_separation=(0.0,1.0),
+    seed_heat_stress=(0.0, 1.0),
+    seed_in_connectivity=(0.0, 1.0),
+    seed_out_connectivity=(0.0, 1.0),
+    seed_depth=(0.0, 1.0),
+    seed_coral_cover=(0.0, 1.0),
+    seed_cluster_diversity=(0.0, 1.0),
+    seed_geographic_separation=(0.0, 1.0),
     #seed_coral_diversity=(0.0,1.0)
 )
 
@@ -69,11 +69,11 @@ scens = []
 for N_seed_value in N_seed_values
     # Fix all N_seed parameters so that sum is N_seed_value
     ADRIA.fix_factor!(dom;
-        N_seed_TA=N_seed_value  ÷ 5,
-        N_seed_CA=N_seed_value  ÷ 5,
+        N_seed_TA=N_seed_value ÷ 5,
+        N_seed_CA=N_seed_value ÷ 5,
         N_seed_CNA=N_seed_value ÷ 5,
-        N_seed_SM=N_seed_value  ÷ 5,
-        N_seed_LM=N_seed_value  ÷ 5
+        N_seed_SM=N_seed_value ÷ 5,
+        N_seed_LM=N_seed_value ÷ 5
     )
     scen = ADRIA.sample(dom, num_samples ÷ length(N_seed_values))
     push!(scens, scen)
@@ -112,12 +112,15 @@ opts = Dict(
         :seed_depth, :seed_coral_cover, :seed_cluster_diversity,
         :seed_geographic_separation]
 )
+axis_opts = Dict(:title => "")
+titles = ["Total absolute cover", "Relative Shelter Volume", "Relative Juveniles", "Coral Evenness"]
 
 for (idx, metric) in enumerate(metrics)
     si = ADRIA.sensitivity.pawn(rs, metric)
+    axis_opts[:title] = titles[idx]
     f = Figure(; fig_opts...)
     g = f[1, 1] = GridLayout()
-    ADRIA.viz.pawn!(g, si; opts)
+    ADRIA.viz.pawn!(g, si; opts=opts, axis_opts=axis_opts)
     Colorbar(g[1, 2]; colormap=:viridis, colorrange=(0, 1), label="Relative Sensitivity", height=Relative(0.65))
     save("pawn_si_$(idx).png", f)
 end
