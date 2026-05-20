@@ -45,40 +45,37 @@ ADRIA.fix_factor!(dom;
     # decision.DepthThresholds parameters
     depth_min=2.0,             # Lower bound of distribution
     depth_offset=25.0,         # Upper bound of distribution
-    # SeedCriteriaWeights parameters
-    seed_wave_stress=0.0
 )
 
-# Set bounds for parameters: min_iv_locations
-ADRIA.set_factor_bounds!(dom;
-    min_iv_locations=(10, 1000),
-    seed_heat_stress=(0.0, 1.0),
-    seed_in_connectivity=(0.0, 1.0),
-    seed_out_connectivity=(0.0, 1.0),
-    seed_depth=(0.0, 1.0),
-    seed_coral_cover=(0.0, 1.0),
-    seed_cluster_diversity=(0.0, 1.0),
-    seed_geographic_separation=(0.0, 1.0),
-    #seed_coral_diversity=(0.0,1.0)
-)
+N_seeds = [1e6, 1e7, 5e7, 1e8]
+min_locations = [10, 50, 100, 500, 1000]
+options = ADRIA.analysis.option_seed_preference(include_weights=true)
+dhw_scenarios = 1:11
 
-num_samples = 1024
-N_seed_values = [1e6, 1e7, 5e7, 1e8]
+n_scens = length(N_seeds) * nrow(options) * length(dhw_scenarios) * length(min_locations)
+scens = repeat(ADRIA.sample(dom, 2)[1:1, :], n_scens)
+scens[!, :option] = zeros(Int, n_scens)
 
-scens = []
-for N_seed_value in N_seed_values
-    # Fix all N_seed parameters so that sum is N_seed_value
-    ADRIA.fix_factor!(dom;
-        N_seed_TA=N_seed_value ÷ 5,
-        N_seed_CA=N_seed_value ÷ 5,
-        N_seed_CNA=N_seed_value ÷ 5,
-        N_seed_SM=N_seed_value ÷ 5,
-        N_seed_LM=N_seed_value ÷ 5
-    )
-    scen = ADRIA.sample(dom, num_samples ÷ length(N_seed_values))
-    push!(scens, scen)
+row = 1
+for N_seed in N_seeds, (opt_idx, option) in enumerate(eachrow(options)), dhw_scenario in dhw_scenarios, min_location in min_locations
+    scens[row, :N_seed_TA]                  = N_seed ÷ 5
+    scens[row, :N_seed_CA]                  = N_seed ÷ 5
+    scens[row, :N_seed_CNA]                 = N_seed ÷ 5
+    scens[row, :N_seed_SM]                  = N_seed ÷ 5
+    scens[row, :N_seed_LM]                  = N_seed ÷ 5
+    scens[row, :seed_heat_stress]           = option[2]
+    scens[row, :seed_in_connectivity]       = option[3]
+    scens[row, :seed_out_connectivity]      = option[4]
+    scens[row, :seed_depth]                 = option[5]
+    scens[row, :seed_coral_cover]           = option[6]
+    scens[row, :seed_cluster_diversity]     = option[7]
+    scens[row, :seed_geographic_separation] = option[8]
+    scens[row, :seed_coral_diversity]       = option[9]
+    scens[row, :dhw_scenario]               = dhw_scenario
+    scens[row, :min_iv_locations]           = min_location
+    scens[row, :option]                     = opt_idx
+    row += 1
 end
-scens = vcat(scens...)
 
 rs = ADRIA.run_scenarios(dom, scens, RCP)
 
@@ -107,10 +104,7 @@ using GeoMakie, GraphMakie, WGLMakie
 fig_opts = Dict(:size => (1600, 800))
 # Factors of Interest
 opts = Dict(
-    :factors => [:dhw_scenario, :N_seed_TA, :min_iv_locations, :seed_heat_stress,
-        :seed_heat_stress, :seed_in_connectivity, :seed_out_connectivity,
-        :seed_depth, :seed_coral_cover, :seed_cluster_diversity,
-        :seed_geographic_separation]
+    :factors => [:dhw_scenario, :N_seed_TA, :min_iv_locations, :option]
 )
 axis_opts = Dict(:title => "")
 titles = ["Total absolute cover", "Relative Shelter Volume", "Relative Juveniles", "Coral Evenness"]
