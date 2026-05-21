@@ -101,51 +101,77 @@ rs = ADRIA.run_scenarios(dom, scens, RCP)
 # path = "Outputs/"
 # rs = ADRIA.load_results(path)
 
-s_tac = ADRIA.metrics.scenario_total_cover(rs)
+# Reefs that received seeding in every intervention scenario (across timesteps 2-32)
+seed_per_reef_per_scen = dropdims(
+    sum(rs.seed_log[timesteps=2:32, scenarios=1:(n_scens - 1)]; dims=(:timesteps, :coral_id)),
+    dims=(:timesteps, :coral_id)
+)
+always_seeded = vec(all(seed_per_reef_per_scen.data .> 0; dims=2))
+never_seeded = vec(all(seed_per_reef_per_scen.data .== 0; dims=2))
 
+selected_locations = .!(always_seeded .| never_seeded) # Remove reefs that always or never have seeding
+selected_locations = findall(selected_locations)
 
+s_tac = ADRIA.metrics.scenario_total_cover(rs; locations=selected_locations)
+s_rsv = ADRIA.metrics.scenario_rsv(rs; locations=selected_locations)
+s_even = ADRIA.metrics.scenario_evenness(rs; locations=selected_locations)
+
+# scenario_relative_juveniles ignores the locations kwarg, so pre-slice manually
+_aj = ADRIA.metrics.absolute_juveniles(rs)
+_k_area = ADRIA.loc_k_area(rs)[selected_locations]
+s_juves = ADRIA.metrics.scenario_relative_juveniles(_aj[locations=selected_locations].data, _k_area)
+metrics = Dict(
+    "Total absolute cover"    => s_tac,
+    "Relative Shelter Volume" => s_rsv,
+    "Relative Juveniles"      => s_juves,
+    "Coral Evenness"          => s_even
+)
 
 using GeoMakie, GraphMakie, WGLMakie
-
 
 # Grouping setup
 option_names = Symbol.(options.option_name)
 all_names = vcat(option_names, [:unguided_intervention, :no_intervention])
+intervention_names = all_names[1:(end-1)]
 n_scens = nrow(scens)
 scen_groups = Dict{Symbol,BitVector}(
     name => BitVector((1:n_scens) .== i) for (i, name) in enumerate(all_names)
 )
+scen_groups_diff = Dict{Symbol,BitVector}(
+    name => BitVector((1:(n_scens - 1)) .== i) for (i, name) in enumerate(intervention_names)
+)
 
-# Figure setup
-fig_opts = Dict(:size => (1600, 800))
-f = Figure(; fig_opts...)
-g = f[1, 1] = GridLayout()
-ts = string.(ADRIA.timesteps(s_tac))
+# Shared x-axis ticks
+ts = string.(ADRIA.timesteps(rs))
 tick_pos = collect(1:5:length(ts))
 tick_lbl = ts[1:5:end]
 (length(ts) - 1) % 5 != 0 && (tick_pos = vcat(tick_pos, length(ts)); tick_lbl = vcat(tick_lbl, ts[end]))
 xtick_vals = (tick_pos, tick_lbl)
 xtick_rot = 2 / π
-ax = Axis(g[1, 1]; xticks=xtick_vals, xticklabelrotation=xtick_rot)
 
-# Plot
-ADRIA.viz.scenarios!(g, ax, s_tac, scen_groups; opts=Dict{Symbol,Any}(:legend_labels => all_names))
-save("options_tac_1.png", f)
+for (name, metric) in metrics
+    metric_diff = ADRIA.DataCube(
+        metric.data[:, 1:(end-1)] .- metric.data[:, end];
+        timesteps=ADRIA.timesteps(rs),
+        scenarios=1:(n_scens - 1)
+    )
 
-# Second plot: TAC relative to no-intervention baseline
-s_tac_diff = ADRIA.DataCube(
-    s_tac.data[:, 1:(end-1)] .- s_tac.data[:, end];
-    timesteps=ADRIA.timesteps(rs),
-    scenarios=1:(n_scens - 1)
-)
+    f = Figure(; size=(3200, 800))
+    g1 = f[1, 1] = GridLayout()
+    g2 = f[1, 2] = GridLayout()
 
-intervention_names = all_names[1:(end-1)]
-scen_groups_diff = Dict{Symbol,BitVector}(
-    name => BitVector((1:(n_scens - 1)) .== i) for (i, name) in enumerate(intervention_names)
-)
+    ax1 = Axis(g1[1, 1]; xticks=xtick_vals, xticklabelrotation=xtick_rot, title=name)
+    ADRIA.viz.scenarios!(g1, ax1, metric, scen_groups;
+        opts=Dict{Symbol,Any}(:legend_labels => all_names, :legend => false, :histogram => false))
+    ADRIA.viz.scenarios_legend!(g1[1, 0], scen_groups, metric;
+        opts=Dict{Symbol,Any}(:legend_labels => all_names),
+        legend_opts=Dict{Symbol,Any}(:padding => (4, 4, 4, 4))
+    )
 
-f2 = Figure(; fig_opts...)
-g2 = f2[1, 1] = GridLayout()
-ax2 = Axis(g2[1, 1]; xticks=xtick_vals, xticklabelrotation=xtick_rot, ylabel="TAC - No intervention")
-ADRIA.viz.scenarios!(g2, ax2, s_tac_diff, scen_groups_diff; opts=Dict{Symbol,Any}(:legend_labels => intervention_names))
-save("options_tac_diff_1.png", f2)
+    ax2 = Axis(g2[1, 1]; xticks=xtick_vals, xticklabelrotation=xtick_rot,
+        title="$name - counterfactual", ylabel="$name - counterfactual")
+    ADRIA.viz.scenarios!(g2, ax2, metric_diff, scen_groups_diff;
+        opts=Dict{Symbol,Any}(:legend_labels => intervention_names, :legend => false, :histogram => false))
+
+    save("options_$(replace(lowercase(name), ' ' => '_')).png", f)
+end
