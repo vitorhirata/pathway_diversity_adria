@@ -83,18 +83,31 @@ rs = ADRIA.run_scenarios(dom, scens, RCP)
 path = "Output/"
 rs = ADRIA.load_results(path)
 
-# Compute scenario metrics
-s_tac = ADRIA.metrics.scenario_total_cover(rs)
+# Reefs that received seeding in every intervention scenario (across timesteps 2-32)
+seed_per_reef_per_scen = dropdims(
+    sum(rs.seed_log[timesteps=2:32, scenarios=1:(n_scens - 1)]; dims=(:timesteps, :coral_id)),
+    dims=(:timesteps, :coral_id)
+)
+always_seeded = vec(all(seed_per_reef_per_scen.data .> 0; dims=2))
+never_seeded = vec(all(seed_per_reef_per_scen.data .== 0; dims=2))
+
+selected_locations = .!(always_seeded .| never_seeded) # Remove reefs that always or never have seeding
+selected_locations = findall(selected_locations)
+
+s_tac = ADRIA.metrics.scenario_total_cover(rs; locations=selected_locations)
 mean_s_tac = vec(mean(s_tac, dims=1))
 
-s_rsv = ADRIA.metrics.scenario_rsv(rs)
+s_rsv = ADRIA.metrics.scenario_rsv(rs; locations=selected_locations)
 mean_s_rsv = vec(mean(s_rsv, dims=1))
 
-s_juves = ADRIA.metrics.scenario_relative_juveniles(rs)
-mean_s_juves = vec(mean(s_juves, dims=1))
-
-s_even = ADRIA.metrics.scenario_evenness(rs)
+s_even = ADRIA.metrics.scenario_evenness(rs; locations=selected_locations)
 mean_s_even = vec(mean(s_even, dims=1))
+
+# scenario_relative_juveniles ignores the locations kwarg, so pre-slice manually
+_aj = ADRIA.metrics.absolute_juveniles(rs)
+_k_area = ADRIA.loc_k_area(rs)[selected_locations]
+s_juves = ADRIA.metrics.scenario_relative_juveniles(_aj[locations=selected_locations].data, _k_area)
+mean_s_juves = vec(mean(s_juves, dims=1))
 
 metrics = [mean_s_tac, mean_s_rsv, mean_s_juves, mean_s_even]
 
