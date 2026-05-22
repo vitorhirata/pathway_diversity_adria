@@ -5,7 +5,7 @@ using WGLMakie, GeoMakie, GraphMakie # or GLMakie instead of WGLMakie
 using Statistics
 using ADRIA
 
-dom = ADRIA.load_domain(ADRIA.RMEDomain, "../DataPackages/rme_ml_2025_02_11", "45")
+dom = ADRIA.load_domain(ADRIA.RMEDomain, "../ADRIA.jl/DataPackages/rme_ml_2025_02_11", "45")
 
 
 # Basic decision_matrix parameters
@@ -36,12 +36,15 @@ dhw_scens = copy(dom.dhw_scens[:, :, dhw_scenario])
 dhw_projection = ADRIA.weighted_projection(dhw_scens, 1, plan_horizon, decay, 75)
 
 #Diversity
+n_groups = dom.coral_growth.n_groups
+n_sizes = dom.coral_growth.n_sizes
+n_locs = ADRIA.n_locations(dom)
+init_cover_3d = ADRIA._reshape_init_cover(dom.init_coral_cover.data, (n_sizes, n_groups, n_locs))
 loc_taxa_cover = ADRIA.metrics.relative_loc_taxa_cover(
-    reshape(dom.init_coral_cover.data, (1, size(dom.init_coral_cover)...)),
-    k_area_locs,
-    dom.coral_growth.n_groups
+    reshape(init_cover_3d, (1, n_groups, n_sizes, n_locs))
 )
-diversity = ADRIA.metrics.coral_diversity(loc_taxa_cover.data)[timesteps=1].data
+evenness = ADRIA.metrics.coral_evenness(loc_taxa_cover.data)
+diversity = ADRIA.metrics.coral_diversity(evenness.data)[timesteps=1].data
 
 # Valid locations
 depth_criteria = ADRIA.identify_within_depth_bounds(dom.loc_data.depth_med, 2.0, 25.0)
@@ -67,7 +70,7 @@ number_options = size(options, 1)
 
 # Options definition plot
 fig = ADRIA.viz.mcda_options(options)
-save("pd_figures/option_weight_matrix.png", fig)
+save("Outputs/pd_figures/option_weight_matrix.png", fig)
 
 # Fil selected_locations for each option
 options.selected_locations = [Vector{String}() for _ in 1:number_options]
@@ -98,7 +101,7 @@ for (idx,row) in enumerate(eachrow(options))
     Label(f[(idx-1) ÷ 3 + 1, mod(idx-1, 3)+1, Bottom()], "Longitude", padding=(0, 0, 0, -50), fontsize=16)
     Label(f[(idx-1) ÷ 3 + 1, mod(idx-1, 3)+1, Left()], "Latitude", rotation=π/2, padding=(0, 40, 0, 0), fontsize=16)
 end
-save("pd_figures/selected_locations.png", f)
+save("Outputs/pd_figures/selected_locations.png", f)
 
 
 # Plot of switching probability matrix
@@ -130,7 +133,7 @@ text!(ax,
     color=:white,
     fontsize=14
 )
-save("pd_figures/probability_matrix.png", fig)
+save("Outputs/pd_figures/probability_matrix.png", fig)
 
 # Scores
 ports = ADRIA.analysis._ports()
@@ -157,7 +160,7 @@ scatterlines!(1:number_options, options.dispersion, color = :red, label="Dispers
 scatterlines!(1:number_options, options.distance_port, color = :blue, label="Distance to port")
 scatterlines!(1:number_options, options.cost_index, color = :green, label="Cost index")
 axislegend(position = :ct)
-save("pd_figures/option_scores.png", fig)
+save("Outputs/pd_figures/option_scores.png", fig)
 
 
 #Similarity index
@@ -190,7 +193,7 @@ text!(ax,
     color=:white,
     fontsize=14,
 )
-save("pd_figures/similarity_matrix.png", fig)
+save("Outputs/pd_figures/similarity_matrix.png", fig)
 
 
 
@@ -209,7 +212,7 @@ for idx in 1:number_options
     ax1 = Axis(fig[1, idx], xlabel=string(options[idx,:option_name]))
     hist!(prob, bins=20)
 end
-save("pd_figures/probabilities_histogram.png", fig)
+save("Outputs/pd_figures/probabilities_histogram.png", fig)
 
 
 fig = Figure()
@@ -222,10 +225,10 @@ ax = Axis(
     limits = (nothing, (6.5, 7.0))
 )
 barplot!(1:number_options, options.pathway_diversity)
-save("pd_figures/pathway_diversity.png", fig)
+save("Outputs/pd_figures/pathway_diversity.png", fig)
 
 
 fig_s_tac = ADRIA.viz.scenarios(
     rs, s_tac; fig_opts=fig_opts, axis_opts=Dict(:ylabel => "Scenario Total Cover")
 )
-save("pd_figures/total_cover.png", fig_s_tac)
+save("Outputs/pd_figures/total_cover.png", fig_s_tac)
