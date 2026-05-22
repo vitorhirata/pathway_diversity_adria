@@ -5,8 +5,11 @@ using WGLMakie, GeoMakie, GraphMakie # or GLMakie instead of WGLMakie
 using Statistics
 using ADRIA
 
-dom = ADRIA.load_domain(ADRIA.RMEDomain, "../ADRIA.jl/DataPackages/rme_ml_2025_02_11", "45")
+RME_path = "/home/vitor/Code/ADRIA.jl/DataPackages/GBR_MCB_GBR_2026-03-30_v080/"
+calib_path = "/home/vitor/Code/ADRIA.jl/DataPackages/calibrated_params.nc"
+RCP = "45" # RCP 26, 45, 70
 
+dom = ADRIA.load_domain(RME_path, RCP; calib_params_fn=calib_path)
 
 # Basic decision_matrix parameters
 mcda_method = ADRIA.decision.mcda_methods()[1]
@@ -32,7 +35,8 @@ plan_horizon = 20
 α = 0.99
 decay = α .^ (1:(plan_horizon + 1)) .^ 2
 dhw_scenario = 7
-dhw_scens = copy(dom.dhw_scens[:, :, dhw_scenario])
+dhw_scens = dom.dhw_scens[scenarios=dhw_scenario, mcb_durations=ADRIA.At(dom.dhw_scens.mcb_durations[1]),
+                          albedo=ADRIA.At(dom.dhw_scens.albedo[1])]
 dhw_projection = ADRIA.weighted_projection(dhw_scens, 1, plan_horizon, decay, 75)
 
 #Diversity
@@ -135,65 +139,87 @@ text!(ax,
 )
 save("Outputs/pd_figures/probability_matrix.png", fig)
 
-# Scores
+# Switching probability subcomponents
 ports = ADRIA.analysis._ports()
-options.cost_index = zeros(size(options, 1))
-options.distance_port = zeros(size(options, 1))
-options.dispersion = zeros(size(options, 1))
 
-for row in eachrow(options)
-    locations = ADRIA.analysis._filter_locations(dom.loc_data, row.selected_locations)
-    row.cost_index = ADRIA.analysis.cost_index(locations, ports)
-    row.distance_port = ADRIA.analysis._distance_port(locations, ports) / 250000.0
-    row.dispersion = ADRIA.analysis._dispersion(locations) / 800000.0
-end
-
-fig = Figure()
-ax = Axis(
-    fig[1, 1];
-    xlabel="Option",
-    ylabel="Score",
-    xticks=(1:number_options, string.(options.option_name)),
-    yticks=(0.0:0.2:1.0),
-)
-scatterlines!(1:number_options, options.dispersion, color = :red, label="Dispersion")
-scatterlines!(1:number_options, options.distance_port, color = :blue, label="Distance to port")
-scatterlines!(1:number_options, options.cost_index, color = :green, label="Cost index")
-axislegend(position = :ct)
-save("Outputs/pd_figures/option_scores.png", fig)
-
-
-#Similarity index
+distance_port = zeros(number_options, number_options)
+dispersion = zeros(number_options, number_options)
 similarity_matrix = zeros(number_options, number_options)
-for row in 1:number_options
-    for col in 1:number_options
-        row_locations = ADRIA.analysis._filter_locations(dom.loc_data, options[row, :selected_locations])
-        col_locations = ADRIA.analysis._filter_locations(dom.loc_data, options[col, :selected_locations])
-        similarity_matrix[row, col] = ADRIA.analysis.option_similarity(row_locations, col_locations)
-    end
+
+for row in 1:number_options, col in 1:number_options
+    row_locs = ADRIA.analysis._filter_locations(dom.loc_data, options[row, :selected_locations])
+    col_locs = ADRIA.analysis._filter_locations(dom.loc_data, options[col, :selected_locations])
+    common_ids = intersect(row_locs.UNIQUE_ID, col_locs.UNIQUE_ID)
+
+    unique_row_locs = row_locs[row_locs.UNIQUE_ID .∉ [common_ids], :]
+    unique_col_locs = col_locs[col_locs.UNIQUE_ID .∉ [common_ids], :]
+
+    distance_port[row, col] = ADRIA.analysis.distance_port_score(unique_col_locs, unique_row_locs, ports)
+    dispersion[row, col] = ADRIA.analysis.dispersion_score(col_locs, row_locs)
+    similarity_matrix[row, col] = ADRIA.analysis.option_similarity(unique_col_locs, unique_row_locs)
 end
 
-fig = Figure()
-ax = Axis(
-    fig[1, 1];
-    xlabel="Option",
-    ylabel="Option",
-    xticks=(1:number_options, string.(options.option_name)),
-    yticks=(1:number_options, string.(options.option_name)),
-    xticklabelrotation=2.0 / π,
-    yreversed=true
-)
-limits = (0.0, 1.0)
-heatmap!(ax, similarity_matrix; colorrange=limits)
-Colorbar(fig[1, 2]; limits=limits)
-text!(ax,
-    string.(round.(vec(similarity_matrix); digits=2));
+function _heatmap_panel!(ax, mat, colorrange=(0.0, 1.0), digits=2)
+    heatmap!(ax, transpose(mat); colorrange=colorrange)
+    text!(ax,
+        string.(round.(vec(mat); digits=digits));
+        position=[Point2f(x, y) for x in 1:number_options for y in 1:number_options],
+        align=(:center, :center),
+        color=:white,
+        fontsize=12
+    )
+end
+
+# 4-panel heatmap: switching probability, option similarity, distance to port, dispersion.
+# prob_matrix is normalized to [0,1] for the shared colorbar; text still shows %.
+option_labels = string.(options.option_name)
+fig = Figure(; size=(2 * 520, 2 * 450))
+ax1 = Axis(fig[1, 1]; title="Switching probability (%)", xlabel="To", ylabel="From",
+    xticks=(1:number_options, option_labels), yticks=(1:number_options, option_labels),
+    xticklabelrotation=2.0/π, yreversed=true)
+heatmap!(ax1, transpose(prob_matrix ./ 100); colorrange=(0.0, 1.0))
+text!(ax1,
+    string.(round.(vec(prob_matrix); digits=1));
     position=[Point2f(x, y) for x in 1:number_options for y in 1:number_options],
     align=(:center, :center),
     color=:white,
-    fontsize=14,
+    fontsize=12
 )
-save("Outputs/pd_figures/similarity_matrix.png", fig)
+
+ax2 = Axis(fig[1, 2]; title="Option similarity", xlabel="To",
+    xticks=(1:number_options, option_labels), yticks=(1:number_options, option_labels),
+    xticklabelrotation=2.0/π, yreversed=true)
+_heatmap_panel!(ax2, similarity_matrix)
+
+ax3 = Axis(fig[2, 1]; title="Distance to port", xlabel="To", ylabel="From",
+    xticks=(1:number_options, option_labels), yticks=(1:number_options, option_labels),
+    xticklabelrotation=2.0/π, yreversed=true)
+_heatmap_panel!(ax3, distance_port)
+
+ax4 = Axis(fig[2, 2]; title="Dispersion", xlabel="To",
+    xticks=(1:number_options, option_labels), yticks=(1:number_options, option_labels),
+    xticklabelrotation=2.0/π, yreversed=true)
+_heatmap_panel!(ax4, dispersion)
+
+Colorbar(fig[1:2, 3]; limits=(0.0, 1.0))
+save("Outputs/pd_figures/option_scores_matrix.png", fig)
+
+# 1-D plot: mean over rows for each destination option (col)
+fig = Figure()
+ax = Axis(
+    fig[1, 1];
+    xlabel="Option",
+    ylabel="Mean score",
+    xticks=(1:number_options, option_labels),
+    yticks=(0.0:0.2:1.0),
+    limits=(nothing, (0.0, 1.0))
+)
+scatterlines!(ax, 1:number_options, vec(mean(dispersion; dims=1)); color=:red, label="Dispersion")
+scatterlines!(ax, 1:number_options, vec(mean(distance_port; dims=1)); color=:blue, label="Distance to port")
+scatterlines!(ax, 1:number_options, vec(mean(similarity_matrix; dims=1)); color=:green, label="Option similarity")
+scatterlines!(ax, 1:number_options, vec(mean(prob_matrix; dims=1)) ./ 100; color=:orange, label="Switching prob.")
+axislegend(ax; position=:ct)
+save("Outputs/pd_figures/option_scores.png", fig)
 
 
 
