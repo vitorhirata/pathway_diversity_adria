@@ -1,18 +1,14 @@
-#! format: off
-"""
-Run GBR-wide sims with ADRIA using the identified MCDA methods.
+#=
+Run GBR-wide simulation with ADRIA using the identified MCDA methods.
 
-Apply some analyses to identify which MCDA method produces outcomes above unguided
-scenarios, which are used as a baseline.
-"""
+Identify which MCDA method produces outcomes above unguided scenarios, which are used as a baseline.
+=#
 
-using Revise, Infiltrator
-using WGLMakie, GeoMakie, GraphMakie
-using ADRIA
-using Statistics, Bootstrap, CSV, DataFrames
+include("src/common.jl")
+using Bootstrap
 
-
-dom = ADRIA.load_domain(ADRIA.RMEDomain, "../DataPackages/rme_ml_2025_02_11/rme_ml_2025_02_11", "45")
+RCP = "45"
+dom = ADRIA.load_domain(pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"])
 
 ADRIA.fix_factor!(
     dom;
@@ -33,11 +29,6 @@ ADRIA.fix_factor!(
     fogging=0.0,
     plan_horizon=20.0
 )
-
-coral_params = CSV.read("coral_params.csv", DataFrame)
-for (name, value) in zip(names(coral_params), collect(values(coral_params[1,:])))
-    ADRIA.fix_factor!(dom, Symbol(name), value)
-end
 
 n_samples = 256
 cf_scens = ADRIA.sample_cf(dom, n_samples)
@@ -60,14 +51,7 @@ vikor_scens = ADRIA.sample_guided(dom, n_samples)
 
 scens = vcat(cf_scens, ug_scens, cocoso_scens, mairca_scens, moora_scens, piv_scens, vikor_scens)
 
-
-scale_params = CSV.read("scale_params.csv", DataFrame)
-for (name, value) in zip(names(scale_params), collect(values(scale_params[1,:])))
-    scens[:,name] = fill(value, size(scens, 1))
-end
-
 rs = ADRIA.run_scenarios(dom, scens, "45")
-
 
 # rs = ADRIA.run_scenarios(dom, scens, "45")
 rs = ADRIA.load_results("./Outputs/ReefMod__RCPs_45__2024-03-16_23_51_50_743")

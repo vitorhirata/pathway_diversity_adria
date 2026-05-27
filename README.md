@@ -12,4 +12,9 @@ debug = false     # Disable multi-processing to allow error messages to be shown
 
 [results]
 output_dir = "./Outputs"  # Change this to point to where you want to store simulation results
+
+[PathwayDiversityAnalysis]
+domain_path      = "<path to domain>"                  # The default analysis uses the GBR_MCB_GBR_2026-03-30_v080 version
+coral_param_path = "<path to coral calibrated params>" # Calibrated coral parameters (version from 2026_03)
+plot_output_path = "<path to plot outputs>"            # Path where plots and analysis will be saved
 ```

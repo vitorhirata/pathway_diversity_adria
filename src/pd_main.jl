@@ -1,21 +1,22 @@
-"""
-Pathway diversity analysis
-"""
-using Revise
-using Infiltrator
-using Statistics, CSV, DataFrames
-using ADRIA
+#=
+Pathway diversity main simulation.
+Main parameters varied:
+- RCP
+- dhw_scenario
+- min_iv_locations
+- Number of seeds
+=#
 
-RME_path = "/home/vitor/Code/ADRIA.jl/DataPackages/rme_ml_2025_02_11/rme_ml_2025_02_11/"
+include("src/common.jl")
+using WGLMakie, GeoMakie, GraphMakie
+
 RCP = "26" # RCP 26, 45, 70
-
 seed_years = 20
 dom = ADRIA.load_domain(
-    ADRIA.RMEDomain,
-    RME_path,
-    RCP;
-    timeframe=(2022, 2022 + 20 + seed_years + 2)
+    pd_config["domain_path"], RCP;
+    calib_params_fn=pd_config["coral_param_path"], timeframe=(2022, 2022 + 20 + seed_years + 2)
 )
+
 
 # Generate scenarios
 ADRIA.fix_factor!(dom;
@@ -41,11 +42,6 @@ ADRIA.fix_factor!(dom;
     #Environmental params
     #dhw_scenario=5         # Scenarios with lower and higher variance. 5 and 7
 )
-
-coral_params = CSV.read("coral_params.csv", DataFrame)
-for (name, value) in zip(names(coral_params), collect(values(coral_params[1, :])))
-    ADRIA.fix_factor!(dom, Symbol(name), value)
-end
 
 dhw_scenarios = [5, 7, 11]
 n_seed_locations = [
@@ -84,11 +80,6 @@ end
 scens = vcat(scens...)
 
 scens.guided = fill(1, size(scens, 1))
-
-scale_params = CSV.read("scale_params.csv", DataFrame)
-for (name, value) in zip(names(scale_params), collect(values(scale_params[1, :])))
-    scens[:, name] = fill(value, size(scens, 1))
-end
 
 # Run scenarios
 #rs = ADRIA.run_scenarios(dom, scens[1:2,:], RCP)
@@ -135,11 +126,9 @@ for (idx_rcp, rcp) in enumerate(rcps)
     end
 end
 
-CSV.write("pathway_diversity.csv", options)
-options = CSV.read("pathway_diversity.csv", DataFrame)
+CSV.write(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), options)
+options = CSV.read(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), DataFrame)
 
-using WGLMakie, GeoMakie, GraphMakie # or GLMakie instead of WGLMakie
-using ADRIA
 
 # RCP plot
 option_fix_seed = options[
@@ -192,7 +181,7 @@ crossbar!(
 )
 elements = [PolyElement(; polycolor=palette[i]) for i in 1:length(unique_rcp)]
 Legend(fig[1, 2], elements, string.(unique_rcp), "RCP")
-save("pathway_diversity_rcp.png", fig)
+save(joinpath(pd_config["plot_output_path"], "pathway_diversity_rcp.png"), fig)
 
 # seed plot
 option_fix_rcp = options[
@@ -257,7 +246,7 @@ Legend(
     ["100", "1 million", "100 million", "10 billion"],
     "Number of seeds"
 )
-save("pathway_diversity_seed.png", fig)
+save(joinpath(pd_config["plot_output_path"], "pathway_diversity_seed.png"), fig)
 
 # Cover by scenario
 rs = rss[2]
@@ -293,4 +282,4 @@ opts = Dict{Symbol,Any}(:summarize => true)
 tsc_fig = ADRIA.viz.clustered_scenarios(
     s_tac_clean, clusters; opts=opts, fig_opts=fig_opts, axis_opts=axis_opts
 )
-save("scenarios_tac.png", tsc_fig)
+save(joinpath(pd_config["plot_output_path"], "scenarios_tac.png"), tsc_fig)

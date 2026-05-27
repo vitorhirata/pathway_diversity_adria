@@ -14,16 +14,11 @@ To identify the option for scenario i after running:
     option = scens.option_ts[i][seed_year_start]  # e.g. :heat_stress
 =#
 
-using Revise
-using Infiltrator
-using Statistics, DataFrames
-using ADRIA
+include("src/common.jl")
+using GeoMakie, GraphMakie, WGLMakie
 
-RME_path = "/home/vitor/Code/ADRIA.jl/DataPackages/GBR_MCB_GBR_2026-03-30_v080/"
-calib_path = "/home/vitor/Code/ADRIA.jl/DataPackages/calibrated_params.nc"
 RCP = "45"
-
-dom = ADRIA.load_domain(RME_path, RCP; calib_params_fn=calib_path)
+dom = ADRIA.load_domain(pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"])
 ms = ADRIA.model_spec(dom)
 
 ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
@@ -138,8 +133,6 @@ metrics = Dict(
     "Coral Evenness"          => s_even
 )
 
-using GeoMakie, GraphMakie, WGLMakie
-
 # Selected locations GIF per intervention scenario
 ts_labels = ADRIA.timesteps(rs)[seed_ts]
 all_centroids = ADRIA.centroids(dom.loc_data)
@@ -164,7 +157,7 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
     poly!(ga_gif, plottable_gif; color=:gray80)
     scatter!(ga_gif, seeded_points; color=:red, markersize=4)
 
-    record(fig_gif, "Outputs/seeding_map_$(scen_name).gif", eachindex(ts_labels); framerate=3) do i
+    record(fig_gif, joinpath(pd_config["plot_output_path"], "seeding_map_$(scen_name).gif"), eachindex(ts_labels); framerate=3) do i
         seeded_points[] = all_centroids[seed_per_reef_per_ts_scen[timesteps=i, scenarios=scen_idx] .> 0]
         title_obs[] = "$scen_name — Year: $(ts_labels[i])"
     end
@@ -184,7 +177,7 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
     )
     hist!(ax, seeding_freq; bins=0:5:100)
 end
-save("Outputs/seeding_frequency_per_option.png", fig_hist)
+save(joinpath(pd_config["plot_output_path"], "seeding_frequency_per_option.png"), fig_hist)
 
 # Seeding frequency histograms aggregating cenarios
 seeding_freq_all = vec(mean(seed_per_reef_per_ts_scen.data .> 0; dims=(1, 3))) .* 100
@@ -197,7 +190,7 @@ ax_hist_all = Axis(
     xticks=0:10:100,
 )
 hist!(ax_hist_all, seeding_freq_all; bins=0:5:100)
-save("Outputs/seeding_frequency_all.png", fig_hist_all)
+save(joinpath(pd_config["plot_output_path"], "seeding_frequency_all.png"), fig_hist_all)
 
 # Options time-series plot
 option_names = Symbol.(options.option_name)
@@ -241,5 +234,5 @@ for (name, metric) in metrics
     ADRIA.viz.scenarios!(g2, ax2, metric_diff, scen_groups_diff;
         opts=Dict{Symbol,Any}(:legend_labels => intervention_names, :legend => false, :histogram => false))
 
-    save("Outputs/options_$(replace(lowercase(name), ' ' => '_')).png", f)
+    save(joinpath(pd_config["plot_output_path"], "options_$(replace(lowercase(name), ' ' => '_')).png"), f)
 end

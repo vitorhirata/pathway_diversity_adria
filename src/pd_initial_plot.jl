@@ -1,15 +1,14 @@
-#! format: off
-using Revise
-using Infiltrator
-using WGLMakie, GeoMakie, GraphMakie # or GLMakie instead of WGLMakie
-using Statistics
-using ADRIA
+#=
+Script showing results to support pathway diversity simulation.
+Plot selected locations, probability matrix and its subcomponents and distribution of selected locations. All for
+the first time-step of the analysis.
+=#
 
-RME_path = "/home/vitor/Code/ADRIA.jl/DataPackages/GBR_MCB_GBR_2026-03-30_v080/"
-calib_path = "/home/vitor/Code/ADRIA.jl/DataPackages/calibrated_params.nc"
+include("src/common.jl")
+using WGLMakie, GeoMakie, GraphMakie
+
 RCP = "45" # RCP 26, 45, 70
-
-dom = ADRIA.load_domain(RME_path, RCP; calib_params_fn=calib_path)
+dom = ADRIA.load_domain(pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"])
 
 # Basic decision_matrix parameters
 mcda_method = ADRIA.decision.mcda_methods()[1]
@@ -74,7 +73,7 @@ number_options = size(options, 1)
 
 # Options definition plot
 fig = ADRIA.viz.mcda_options(options)
-save("Outputs/pd_figures/option_weight_matrix.png", fig)
+save(joinpath(pd_config["plot_output_path"], "pd_figures", "option_weight_matrix.png"), fig)
 
 # Fil selected_locations for each option
 options.selected_locations = [Vector{String}() for _ in 1:number_options]
@@ -105,7 +104,7 @@ for (idx,row) in enumerate(eachrow(options))
     Label(f[(idx-1) ÷ 3 + 1, mod(idx-1, 3)+1, Bottom()], "Longitude", padding=(0, 0, 0, -50), fontsize=16)
     Label(f[(idx-1) ÷ 3 + 1, mod(idx-1, 3)+1, Left()], "Latitude", rotation=π/2, padding=(0, 40, 0, 0), fontsize=16)
 end
-save("Outputs/pd_figures/selected_locations.png", f)
+save(joinpath(pd_config["plot_output_path"], "pd_figures", "selected_locations.png"), f)
 
 
 # Plot of switching probability matrix
@@ -137,7 +136,7 @@ text!(ax,
     color=:white,
     fontsize=14
 )
-save("Outputs/pd_figures/probability_matrix.png", fig)
+save(joinpath(pd_config["plot_output_path"], "pd_figures", "probability_matrix.png"), fig)
 
 # Switching probability subcomponents
 ports = ADRIA.analysis._ports()
@@ -202,7 +201,7 @@ ax4 = Axis(fig[2, 2]; title="Dispersion", xlabel="To",
 _heatmap_panel!(ax4, dispersion)
 
 Colorbar(fig[1:2, 3]; limits=(0.0, 1.0))
-save("Outputs/pd_figures/option_scores_matrix.png", fig)
+save(joinpath(pd_config["plot_output_path"], "pd_figures", "option_scores_matrix.png"), fig)
 
 # 1-D plot: mean over rows for each destination option (col)
 fig = Figure()
@@ -219,7 +218,7 @@ scatterlines!(ax, 1:number_options, vec(mean(distance_port; dims=1)); color=:blu
 scatterlines!(ax, 1:number_options, vec(mean(similarity_matrix; dims=1)); color=:green, label="Option similarity")
 scatterlines!(ax, 1:number_options, vec(mean(prob_matrix; dims=1)) ./ 100; color=:orange, label="Switching prob.")
 axislegend(ax; position=:ct)
-save("Outputs/pd_figures/option_scores.png", fig)
+save(joinpath(pd_config["plot_output_path"], "pd_figures", "option_scores.png"), fig)
 
 
 
@@ -238,7 +237,7 @@ for idx in 1:number_options
     ax1 = Axis(fig[1, idx], xlabel=string(options[idx,:option_name]))
     hist!(prob, bins=20)
 end
-save("Outputs/pd_figures/probabilities_histogram.png", fig)
+save(joinpath(pd_config["plot_output_path"], "pd_figures", "probabilities_histogram.png"), fig)
 
 
 fig = Figure()
@@ -251,10 +250,10 @@ ax = Axis(
     limits = (nothing, (6.5, 7.0))
 )
 barplot!(1:number_options, options.pathway_diversity)
-save("Outputs/pd_figures/pathway_diversity.png", fig)
+save(joinpath(pd_config["plot_output_path"], "pd_figures", "pathway_diversity.png"), fig)
 
 
 fig_s_tac = ADRIA.viz.scenarios(
     rs, s_tac; fig_opts=fig_opts, axis_opts=Dict(:ylabel => "Scenario Total Cover")
 )
-save("Outputs/pd_figures/total_cover.png", fig_s_tac)
+save(joinpath(pd_config["plot_output_path"], "pd_figures", "total_cover.png"), fig_s_tac)

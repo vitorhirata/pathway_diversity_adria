@@ -6,17 +6,11 @@ PAW sensitivity analysis considering four main parameters:
 - Seed weights
 =#
 
-using Revise
-using Infiltrator
-using Statistics, CSV, DataFrames
-using ADRIA
+include("src/common.jl")
+using GeoMakie, GraphMakie, WGLMakie
 
-RME_path = "/home/vitor/Code/ADRIA.jl/DataPackages/GBR_MCB_GBR_2026-03-30_v080/"
-calib_path = "/home/vitor/Code/ADRIA.jl/DataPackages/calibrated_params.nc"
 RCP = "45" # RCP 26, 45, 70
-
-dom = ADRIA.load_domain(RME_path, RCP; calib_params_fn=calib_path)
-
+dom = ADRIA.load_domain(pd_config[:domain_path], RCP; calib_params_fn=pd_config[:coral_param_path])
 ms = ADRIA.model_spec(dom)
 
 # Fix four classes of parameters
@@ -111,8 +105,6 @@ mean_s_juves = vec(mean(s_juves, dims=1))
 
 metrics = [mean_s_tac, mean_s_rsv, mean_s_juves, mean_s_even]
 
-using GeoMakie, GraphMakie, WGLMakie
-
 # Some shared options for the example plots below
 fig_opts = Dict(:size => (1600, 800))
 # Factors of Interest
@@ -129,5 +121,5 @@ for (idx, metric) in enumerate(metrics)
     g = f[1, 1] = GridLayout()
     ADRIA.viz.pawn!(g, si; opts=opts, axis_opts=axis_opts)
     Colorbar(g[1, 2]; colormap=:viridis, colorrange=(0, 1), label="Relative Sensitivity", height=Relative(0.65))
-    save("pawn_si_$(idx).png", f)
+    save(joinpath(pd_config["plot_output_path"], "pawn_si_$(idx).png"), f)
 end
