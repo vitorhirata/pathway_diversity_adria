@@ -636,9 +636,9 @@ version = "0.6.4"
 
 [[deps.CoralBlox]]
 deps = ["DataStructures", "StaticArrays", "YAXArrays"]
-git-tree-sha1 = "ec64cda7db596126f3d3ef6e7bce7d4b170724da"
+git-tree-sha1 = "c3ee6d3fcafcd66b0252c2428feb6d8e9a219736"
 uuid = "f00a6e10-004a-11ef-3676-67ec635bc1a2"
-version = "1.1.6"
+version = "1.1.7"
 weakdeps = ["Makie"]
 
     [deps.CoralBlox.extensions]
@@ -2330,7 +2330,7 @@ uuid = "925886fa-5bf2-5e8e-b522-a9147a512338"
 version = "1.7.1"
 
 [[deps.OpenBLAS32_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "libblastrampoline_jll"]
 git-tree-sha1 = "dd0d9979377e43918a80486a562ddedcc6d9bdf3"
 uuid = "656ef2d0-ae68-5445-9ca0-591084a874a2"
 version = "0.3.33+0"

@@ -16,43 +16,43 @@ dom = ADRIA.load_domain(
     pd_config["domain_path"], RCP;
     calib_params_fn=pd_config["coral_param_path"], timeframe=(2022, 2022 + 20 + seed_years + 2)
 )
+ms = ADRIA.model_spec(dom)
 
+ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
+ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "MCCriteriaWeights").fieldname)
+ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "Coral").fieldname)
+ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "GrowthAcceleration").fieldname)
 
 # Generate scenarios
 ADRIA.fix_factor!(dom;
     #Seeding params
     seed_year_start=2,     # Start as soon as possible. Possible parameter to vary
-    #seed_years=30,        # Based on pathway diversity analysis time
-    seed_years=seed_years,         # Based on pathway diversity analysis time
+    seed_years=seed_years, # Based on pathway diversity analysis time
     seed_deployment_freq=1,# Lower bound of distribution. Seed every year.
-    #N_seed_TA=Int64(1e10), # Upper bound of distribution
-    #N_seed_CA=Int64(1e10), # Upper bound of distribution
-    #N_seed_SM=Int64(1e10), # Upper bound of distribution
+    seeding_devices_per_m2=5,
+    seed_strategy=1,        # Periodic deployment
+    a_adapt=5.0,
+    a_adapt_ref=5,
     # Interventions params
-    #min_iv_locations=500,   # Upper bound of distribution
-    plan_horizon=20.0,     # Upper bound of distribution
-    a_adapt=0.0,           # As we are applying seeding since the first year, no assisted adaptation
+    plan_horizon=5.0,     # Upper bound of distribution
     guided=1,              # CoCoSo. Better performance based on initial analysis
     #Decision params. Chosen to allow more locations receive intervention
     depth_min=2.0,         # Lower bound of distribution
     depth_offset=25.0,     # Upper bound of distribution
-    #Other interventions (no fogging and shading)
+    #Other interventions (no fogging, shading or moving corals)
     fogging=0.0,
-    SRM=0.0
+    SRM=0.0,
+    N_mc_settlers=0,
     #Environmental params
-    #dhw_scenario=5         # Scenarios with lower and higher variance. 5 and 7
+    wave_scenario=1
 )
 
 dhw_scenarios = [5, 7, 11]
 n_seed_locations = [
     [1e2, 15],
-    [1e6, 15],
     [1e6, 200],
-    [1e6, 1000],
+    [1e7, 200],
     [1e8, 200],
-    [1e8, 1000],
-    [1e10, 200],
-    [1e10, 1000]
 ]
 
 params = fill(zeros(Int64, 3), length(dhw_scenarios) * length(n_seed_locations))
@@ -71,15 +71,20 @@ end
 
 pd_frequency::Int64 = 5
 scens = []
+N_seed_weights = (N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0)
 for param in params
-    ADRIA.fix_factor!(dom; N_seed_TA=param[1], N_seed_CA=param[1],
-        N_seed_SM=param[1], dhw_scenario=param[3], min_iv_locations=param[2])
+    ADRIA.fix_factor!(dom;
+        N_seed_TA=param[1] * N_seed_weights.N_seed_TA,
+        N_seed_CA=param[1] * N_seed_weights.N_seed_CA,
+        N_seed_CNA=param[1] * N_seed_weights.N_seed_CNA,
+        N_seed_SM=param[1] * N_seed_weights.N_seed_SM,
+        N_seed_LM=param[1] * N_seed_weights.N_seed_LM,
+        dhw_scenario=param[3],
+        min_iv_locations=param[2])
     scen = ADRIA.sample_options(dom, pd_frequency)
     push!(scens, scen)
 end
 scens = vcat(scens...)
-
-scens.guided = fill(1, size(scens, 1))
 
 # Run scenarios
 #rs = ADRIA.run_scenarios(dom, scens[1:2,:], RCP)
