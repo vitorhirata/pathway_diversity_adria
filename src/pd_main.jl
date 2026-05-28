@@ -14,7 +14,8 @@ RCP = "26" # RCP 26, 45, 70
 seed_years = 20
 dom = ADRIA.load_domain(
     pd_config["domain_path"], RCP;
-    calib_params_fn=pd_config["coral_param_path"], timeframe=(2022, 2022 + 20 + seed_years + 2)
+    calib_params_fn=pd_config["coral_param_path"],
+    timeframe=(2022, 2022 + 20 + seed_years + 2)
 )
 ms = ADRIA.model_spec(dom)
 
@@ -52,7 +53,7 @@ n_seed_locations = [
     [1e2, 15],
     [1e6, 200],
     [1e7, 200],
-    [1e8, 200],
+    [1e8, 200]
 ]
 
 params = fill(zeros(Int64, 3), length(dhw_scenarios) * length(n_seed_locations))
@@ -68,10 +69,11 @@ for idx_seed_loc in 1:length(n_seed_locations)
     end
 end
 
-
 pd_frequency::Int64 = 5
 scens = []
-N_seed_weights = (N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0)
+N_seed_weights = (
+    N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0
+)
 for param in params
     ADRIA.fix_factor!(dom;
         N_seed_TA=param[1] * N_seed_weights.N_seed_TA,
@@ -119,7 +121,8 @@ for (idx_rcp, rcp) in enumerate(rcps)
     for param in params
         println(param)
         condition =
-            scens.N_seed_CA .== param[1] .&& scens.min_iv_locations .== param[2] .&&
+            scens.N_seed_CA .== param[1] .&&
+            scens.min_iv_locations .== param[2] .&&
             scens.dhw_scenario .== param[3]
         idx_scens = findall(condition)
         tmp_options = ADRIA.analysis.pathway_diversity(rs, scens, idx_scens)
@@ -132,8 +135,9 @@ for (idx_rcp, rcp) in enumerate(rcps)
 end
 
 CSV.write(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), options)
-options = CSV.read(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), DataFrame)
-
+options = CSV.read(
+    joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), DataFrame
+)
 
 # RCP plot
 option_fix_seed = options[

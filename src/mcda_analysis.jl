@@ -8,7 +8,9 @@ include("src/common.jl")
 using Bootstrap
 
 RCP = "45"
-dom = ADRIA.load_domain(pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"])
+dom = ADRIA.load_domain(
+    pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"]
+)
 
 ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
 ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "MCCriteriaWeights").fieldname)
@@ -65,7 +67,9 @@ piv_scens = ADRIA.sample_guided(dom, n_samples)
 ADRIA.fix_factor!(dom; guided=5.0)
 vikor_scens = ADRIA.sample_guided(dom, n_samples)
 
-scens = vcat(cf_scens, ug_scens, cocoso_scens, mairca_scens, moora_scens, piv_scens, vikor_scens)
+scens = vcat(
+    cf_scens, ug_scens, cocoso_scens, mairca_scens, moora_scens, piv_scens, vikor_scens
+)
 
 rs = ADRIA.run_scenarios(dom, scens, "45")
 
@@ -108,8 +112,22 @@ for guided_method in 1:5
         end
 
         # bootstrap mean/median for each shuffled sample
-        guide_delta_mean[n, :, guided_method] .= collect(Iterators.flatten(confint(bootstrap(mean, b_sample[:, 1], BalancedSampling(100)), PercentileConfInt(0.95))))
-        guide_delta_median[n, :, guided_method] .= collect(Iterators.flatten(confint(bootstrap(median, b_sample[:, 2], BalancedSampling(100)), PercentileConfInt(0.95))))
+        guide_delta_mean[n, :, guided_method] .= collect(
+            Iterators.flatten(
+                confint(
+                    bootstrap(mean, b_sample[:, 1], BalancedSampling(100)),
+                    PercentileConfInt(0.95)
+                )
+            )
+        )
+        guide_delta_median[n, :, guided_method] .= collect(
+            Iterators.flatten(
+                confint(
+                    bootstrap(median, b_sample[:, 2], BalancedSampling(100)),
+                    PercentileConfInt(0.95)
+                )
+            )
+        )
     end
 
     mean_count = count(guide_delta_mean[:, 1, guided_method] .> 0.0)
