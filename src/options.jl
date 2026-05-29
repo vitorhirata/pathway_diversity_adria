@@ -15,7 +15,7 @@ To identify the option for scenario i after running:
 =#
 
 include("src/common.jl")
-using GeoMakie, GraphMakie, WGLMakie
+using GeoMakie, GraphMakie, CairoMakie, NaturalEarth
 
 RCP = "45"
 dom = ADRIA.load_domain(pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"])
@@ -143,23 +143,71 @@ all_centroids = ADRIA.centroids(dom.loc_data)
 scenario_names = vcat(options.option_name, [:unguided])
 plottable_gif = GeoMakie.to_multipoly(dom.loc_data[:, :geometry])
 
+# Pre-load NaturalEarth datasets (cached to disk after first download)
+_ne_land   = naturalearth("land", 10)
+_ne_places = naturalearth("populated_places", 10)
+
+# Shared GBR map extent
+_gbr_lon_min, _gbr_lon_max = 141.8, 153.7
+_gbr_lat_min, _gbr_lat_max = -25.2, -9.8
+
+function _gbr_annotations!(ax)
+    # Step 3: city labels
+    for feat in _ne_places
+        p = feat.properties
+        lon = get(p, :LONGITUDE, nothing)
+        lat = get(p, :LATITUDE, nothing)
+        (isnothing(lon) || isnothing(lat)) && continue
+        _gbr_lon_min <= lon <= _gbr_lon_max || continue
+        _gbr_lat_min <= lat <= _gbr_lat_max || continue
+        get(p, :ADM0NAME, "") == "Australia" || continue
+        get(p, :SCALERANK, 99) <= 8 || continue
+        scatter!(ax, [lon], [lat]; color=:black, markersize=5)
+        text!(ax, lon - 0.08, lat;
+            text=get(p, :NAME, ""), fontsize=8, align=(:right, :center), color=:gray20)
+    end
+
+    # Step 4: scale bar
+    bar_lat  = _gbr_lat_min + 0.4
+    bar_lon0 = _gbr_lon_min + 0.3
+    bar_lon1 = bar_lon0 + 100.0 / (111.32 * cosd(abs(bar_lat)))
+    cap_h    = 0.07
+    lines!(ax, [bar_lon0, bar_lon1], [bar_lat, bar_lat]; color=:black, linewidth=2.5)
+    lines!(ax, [bar_lon0, bar_lon0], [bar_lat - cap_h, bar_lat + cap_h]; color=:black, linewidth=2.5)
+    lines!(ax, [bar_lon1, bar_lon1], [bar_lat - cap_h, bar_lat + cap_h]; color=:black, linewidth=2.5)
+    text!(ax, bar_lon0, bar_lat - cap_h - 0.08; text="0",      align=(:center, :top), fontsize=9, color=:black)
+    text!(ax, bar_lon1, bar_lat - cap_h - 0.08; text="100 km", align=(:center, :top), fontsize=9, color=:black)
+
+    # Step 5: north arrow
+    arr_lon  = _gbr_lon_max - 0.6
+    arr_lat0 = _gbr_lat_max - 1.5
+    arr_dlat = 0.8
+    arrows2d!(ax, [arr_lon], [arr_lat0], [0.0], [arr_dlat];
+        color=:black, tiplength=10.32, tipwidth=8.9)
+    text!(ax, arr_lon, arr_lat0 + arr_dlat + 0.12;
+        text="N", align=(:center, :bottom), fontsize=13, font=:bold)
+end
+
 for (scen_idx, scen_name) in enumerate(scenario_names)
     seeded_points = Observable(Point2f[])
     title_obs = Observable("$scen_name — Year: $(ts_labels[1])")
 
-    fig_gif = Figure(; size=(650, 920), figure_padding=5)
+    fig_gif = Figure()
     ga_gif = GeoAxis(
         fig_gif[1, 1];
-        dest="+proj=latlong +datum=WGS84",
+        dest="+proj=longlat +datum=WGS84",
+        limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
         title=title_obs,
         titlesize=20,
-        aspect=DataAspect(),
-        limits=((141.8, 153.7), (-25.2, -9.8)),
-        xgridwidth=0.5,
-        ygridwidth=0.5,
+        xgridcolor=(:gray, 0.15),
+        ygridcolor=(:gray, 0.15),
     )
+    poly!(ga_gif, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
     poly!(ga_gif, plottable_gif; color=:gray80)
     scatter!(ga_gif, seeded_points; color=:red, markersize=4)
+    _gbr_annotations!(ga_gif)
+    rowsize!(fig_gif.layout, 1, Aspect(1, 1.0))
+    resize_to_layout!(fig_gif)
 
     record(fig_gif, joinpath(pd_config["plot_output_path"], "seeding_map_$(scen_name).gif"), eachindex(ts_labels); framerate=3) do i
         seeded_points[] = all_centroids[seed_per_reef_per_ts_scen[timesteps=i, scenarios=scen_idx] .> 0]
@@ -217,16 +265,16 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
     diff = n_yrs_above[active_mask, scen_idx] .- n_yrs_above[active_mask, cf_idx]
     max_abs = max(1, maximum(abs.(diff)))
 
-    fig_map = Figure(; size=(700, 960), figure_padding=5)
+    fig_map = Figure()
     ga_map = GeoAxis(
         fig_map[1, 1];
-        dest="+proj=latlong +datum=WGS84",
+        dest="+proj=longlat +datum=WGS84",
+        limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
         title="Δ years above 20% target — $scen_name vs CF",
-        aspect=DataAspect(),
-        limits=((141.8, 153.7), (-25.2, -9.8)),
-        xgridwidth=0.5,
-        ygridwidth=0.5,
+        xgridcolor=(:gray, 0.15),
+        ygridcolor=(:gray, 0.15),
     )
+    poly!(ga_map, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
     poly!(ga_map, plottable_gif; color=:gray80, strokewidth=0)
     poly!(ga_map, plottable_active; color=diff, colormap=:RdBu,
         colorrange=(-max_abs, max_abs), strokewidth=0)
@@ -236,7 +284,10 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         label="Δ years above 20% target (intervention − CF)",
         height=Relative(0.65)
     )
-    save(joinpath(pd_config["plot_output_path"], "n_yrs_above_target_$(scen_name).png"), fig_map)
+    _gbr_annotations!(ga_map)
+    rowsize!(fig_map.layout, 1, Aspect(1, 1.0))
+    resize_to_layout!(fig_map)
+    save(joinpath(pd_config["plot_output_path"], "n_yrs_above_target_$(scen_name).png"), fig_map; px_per_unit=2)
 end
 
 # Cumulative functional diversity difference map per scenario
@@ -248,16 +299,16 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
     diff_fd = cum_fd_diff[active_mask, scen_idx]
     max_abs_fd = max(1e-6, maximum(abs.(diff_fd)))
 
-    fig_fd = Figure(; size=(700, 960), figure_padding=5)
+    fig_fd = Figure()
     ga_fd = GeoAxis(
         fig_fd[1, 1];
-        dest="+proj=latlong +datum=WGS84",
+        dest="+proj=longlat +datum=WGS84",
+        limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
         title="Δ cumulative coral evenness — $scen_name vs CF",
-        aspect=DataAspect(),
-        limits=((141.8, 153.7), (-25.2, -9.8)),
-        xgridwidth=0.5,
-        ygridwidth=0.5,
+        xgridcolor=(:gray, 0.15),
+        ygridcolor=(:gray, 0.15),
     )
+    poly!(ga_fd, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
     poly!(ga_fd, plottable_gif; color=:gray80, strokewidth=0)
     poly!(ga_fd, plottable_active; color=diff_fd, colormap=:RdBu,
         colorrange=(-max_abs_fd, max_abs_fd), strokewidth=0)
@@ -267,7 +318,10 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         label="Δ cumulative coral evenness (intervention − CF)",
         height=Relative(0.65)
     )
-    save(joinpath(pd_config["plot_output_path"], "cum_fd_diff_$(scen_name).png"), fig_fd)
+    _gbr_annotations!(ga_fd)
+    rowsize!(fig_fd.layout, 1, Aspect(1, 1.0))
+    resize_to_layout!(fig_fd)
+    save(joinpath(pd_config["plot_output_path"], "cum_fd_diff_$(scen_name).png"), fig_fd; px_per_unit=2)
 end
 
 # Options time-series plot
