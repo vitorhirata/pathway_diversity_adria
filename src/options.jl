@@ -26,30 +26,34 @@ ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "MCCriteriaWeights").fieldname
 ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "Coral").fieldname)
 ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "GrowthAcceleration").fieldname)
 
+N_seed_weights = (N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0)
+N_seed_total = 1e7
+
 ADRIA.fix_factor!(dom;
     # Environmental
     wave_scenario=1,
     dhw_scenario=11,
-    # Intervention
+    # Intervention parameters
     guided=1,               # CoCoSo
+    min_iv_locations=200,
+    plan_horizon=5.0,
+    # Alternative interventions
     N_mc_settlers=0,
-    seeding_devices_per_m2=5,
     fogging=0.0,
     SRM=0.0,
-    a_adapt=0.0,
-    a_adapt_ref=0.0,
+    # Seeding parameters
+    seed_year_start=2,
     seed_years=30,
     seed_deployment_freq=1,
-    plan_horizon=20.0,
-    seed_year_start=2,
     seed_strategy=1,        # Periodic deployment
-    min_iv_locations=1000,
-    # 1e8 corals total split equally across 5 species
-    N_seed_TA=2e7,
-    N_seed_CA=2e7,
-    N_seed_CNA=2e7,
-    N_seed_SM=2e7,
-    N_seed_LM=2e7,
+    seeding_devices_per_m2=5,
+    a_adapt=5.0,
+    a_adapt_ref=5,
+    N_seed_TA=N_seed_total * N_seed_weights.N_seed_TA,
+    N_seed_CA=N_seed_total * N_seed_weights.N_seed_CA,
+    N_seed_CNA=N_seed_total * N_seed_weights.N_seed_CNA,
+    N_seed_SM=N_seed_total * N_seed_weights.N_seed_SM,
+    N_seed_LM=N_seed_total * N_seed_weights.N_seed_LM,
     # Depth
     depth_min=2.0,
     depth_offset=25.0

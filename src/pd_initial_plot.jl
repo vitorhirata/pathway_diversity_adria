@@ -30,7 +30,7 @@ diversity_scores = ADRIA.decision.cluster_diversity(dom.loc_data.CB_CALIB_GROUPS
 separation_scores = ADRIA.decision.geographic_separation(dom.loc_data.mean_to_neighbor)
 
 # dhw and wave
-plan_horizon = 20
+plan_horizon = 5
 α = 0.99
 decay = α .^ (1:(plan_horizon + 1)) .^ 2
 dhw_scenario = 7

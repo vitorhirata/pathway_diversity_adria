@@ -25,17 +25,18 @@ ADRIA.fix_factor!(dom;
     wave_scenario=1,
     # Intervention parameters
     guided=1,                  # Use CoCoSo method
+    plan_horizon=5.0,         # Upper bound of sampling distribution
     N_mc_settlers=0,           # No moving corals
-    seeding_devices_per_m2=5,  # Check if makes sense.
     fogging=0.0,               # No fogging
     SRM=0.0,                   # No shadding
-    a_adapt=0.0,               # No assisted adaptation
-    a_adapt_ref=0.0,           # No assisted adaptation
+    # Seending intervention parameters
+    seed_year_start=2,         # Start as soon as possible
     seed_years=30,
     seed_deployment_freq=1,    # Lower bound of sampling distribution. Seed every year
-    plan_horizon=20.0,         # Upper bound of sampling distribution
-    seed_year_start=2,         # Start as soon as possible
     seed_strategy=1,           # Periodic seed deployment
+    seeding_devices_per_m2=5,
+    a_adapt=5.0,
+    a_adapt_ref=5,
     # decision.DepthThresholds parameters
     depth_min=2.0,             # Lower bound of distribution
     depth_offset=25.0,         # Upper bound of distribution
