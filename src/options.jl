@@ -18,7 +18,8 @@ include("src/common.jl")
 using GeoMakie, GraphMakie, CairoMakie, NaturalEarth
 
 RCP = "45"
-dom = ADRIA.load_domain(pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"])
+dom = ADRIA.load_domain(pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"],
+                        timeframe=(2022, 2060))
 ms = ADRIA.model_spec(dom)
 
 ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
@@ -137,12 +138,6 @@ metrics = Dict(
     "Coral Evenness"          => s_even
 )
 
-# Selected locations GIF per intervention scenario
-ts_labels = ADRIA.timesteps(rs)[seed_ts]
-all_centroids = ADRIA.centroids(dom.loc_data)
-scenario_names = vcat(options.option_name, [:unguided])
-plottable_gif = GeoMakie.to_multipoly(dom.loc_data[:, :geometry])
-
 # Pre-load NaturalEarth datasets (cached to disk after first download)
 _ne_land   = naturalearth("land", 10)
 _ne_places = naturalearth("populated_places", 10)
@@ -150,6 +145,10 @@ _ne_places = naturalearth("populated_places", 10)
 # Shared GBR map extent
 _gbr_lon_min, _gbr_lon_max = 141.8, 153.7
 _gbr_lat_min, _gbr_lat_max = -25.2, -9.8
+
+ts_labels = ADRIA.timesteps(rs)[seed_ts]
+all_centroids = ADRIA.centroids(dom.loc_data)
+scenario_names = vcat(options.option_name, [:unguided])
 
 function _gbr_annotations!(ax)
     # Step 3: city labels
@@ -161,14 +160,14 @@ function _gbr_annotations!(ax)
         _gbr_lon_min <= lon <= _gbr_lon_max || continue
         _gbr_lat_min <= lat <= _gbr_lat_max || continue
         get(p, :ADM0NAME, "") == "Australia" || continue
-        get(p, :SCALERANK, 99) <= 8 || continue
+        get(p, :SCALERANK, 99) <= 6 || continue
         scatter!(ax, [lon], [lat]; color=:black, markersize=5)
         text!(ax, lon - 0.08, lat;
             text=get(p, :NAME, ""), fontsize=8, align=(:right, :center), color=:gray20)
     end
 
     # Step 4: scale bar
-    bar_lat  = _gbr_lat_min + 0.4
+    bar_lat  = _gbr_lat_min + 0.5
     bar_lon0 = _gbr_lon_min + 0.3
     bar_lon1 = bar_lon0 + 100.0 / (111.32 * cosd(abs(bar_lat)))
     cap_h    = 0.07
@@ -188,6 +187,9 @@ function _gbr_annotations!(ax)
         text="N", align=(:center, :bottom), fontsize=13, font=:bold)
 end
 
+#=
+# Selected locations GIF per intervention scenario
+plottable_gif = GeoMakie.to_multipoly(dom.loc_data[:, :geometry])
 for (scen_idx, scen_name) in enumerate(scenario_names)
     seeded_points = Observable(Point2f[])
     title_obs = Observable("$scen_name — Year: $(ts_labels[1])")
@@ -201,6 +203,8 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         titlesize=20,
         xgridcolor=(:gray, 0.15),
         ygridcolor=(:gray, 0.15),
+        xticklabelsize=7,
+        yticklabelsize=7,
     )
     poly!(ga_gif, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
     poly!(ga_gif, plottable_gif; color=:gray80)
@@ -214,6 +218,7 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         title_obs[] = "$scen_name — Year: $(ts_labels[i])"
     end
 end
+=#
 
 # Seeding frequency histograms per intervention scenario
 fig_hist = Figure(; size=(length(scenario_names) * 350, 400))
@@ -244,44 +249,90 @@ ax_hist_all = Axis(
 hist!(ax_hist_all, seeding_freq_all; bins=0:5:100)
 save(joinpath(pd_config["plot_output_path"], "seeding_frequency_all.png"), fig_hist_all)
 
-# n_yrs_above_target choropleth map per scenario
-m_tac = Array(ADRIA.metrics.total_absolute_cover(rs)) .* 1e-6   # (n_ts, n_locs, n_scens) km²
-loc_hab_area_km2 = rs.loc_area .* rs.loc_max_coral_cover .* 1e-6 # (n_locs,)
+cf_idx = nrow(scens)  # last scenario = no_intervention
+active_mask = .!never_seeded
+
+# Total seeds per location map per intervention scenario
+total_seeds = Array(dropdims(
+    sum(rs.seed_log[scenarios=1:(nrow(scens) - 1)]; dims=(:timesteps, :coral_id)),
+    dims=(:timesteps, :coral_id)
+))  # (n_locs, n_intervention_scens)
+#seed_colorrange = (0.0, Float64(maximum(total_seeds)))
+seed_colorrange = (0.0, 1.2e7)
+
+for (scen_idx, scen_name) in enumerate(scenario_names)
+    scen_no_seeds  = total_seeds[:, scen_idx] .== 0
+    scen_has_seeds = .!scen_no_seeds
+
+    fig_seeds = Figure()
+    ga_seeds = GeoAxis(
+        fig_seeds[1, 1];
+        dest="+proj=longlat +datum=WGS84",
+        limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
+        title="Total seeds per location — $scen_name",
+        xgridcolor=(:gray, 0.15),
+        ygridcolor=(:gray, 0.15),
+        xticklabelsize=7,
+        yticklabelsize=7,
+    )
+    poly!(ga_seeds, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
+    scatter!(ga_seeds, all_centroids[scen_no_seeds]; color=:gray80, markersize=4, alpha=0.5)
+    seeds_vals = total_seeds[scen_has_seeds, scen_idx]
+    order = sortperm(seeds_vals)
+    scatter!(ga_seeds, all_centroids[scen_has_seeds][order]; color=seeds_vals[order],
+        colormap=:viridis, colorrange=seed_colorrange, markersize=4, alpha=0.7)
+    Colorbar(fig_seeds[1, 2];
+        colorrange=seed_colorrange,
+        colormap=:viridis,
+        label="Total seeds",
+        height=Relative(0.65)
+    )
+    _gbr_annotations!(ga_seeds)
+    rowsize!(fig_seeds.layout, 1, Aspect(1, 1.0))
+    resize_to_layout!(fig_seeds)
+    save(joinpath(pd_config["plot_output_path"], "total_seeds_$(scen_name).png"), fig_seeds; px_per_unit=2)
+end
+
+# n_yrs_above_target scatter map per scenario
+m_tac = Array(ADRIA.metrics.total_absolute_cover(rs)) .* 1e-6  # km²
+loc_hab_area_km2 = rs.loc_area .* rs.loc_max_coral_cover .* 1e-6
 n_locs_total = size(m_tac, 2)
 
 n_yrs_above = Matrix{Int32}(undef, n_locs_total, nrow(scens))
 for s in 1:nrow(scens)
     for l in 1:n_locs_total
-        thr = 0.20 * loc_hab_area_km2[l]
+        thr = 0.20 * loc_hab_area_km2[l] # Threshold of 20% coral cover
         n_yrs_above[l, s] = Int32(count(m_tac[:, l, s] .>= thr))
     end
 end
 
-cf_idx = nrow(scens)  # last scenario = no_intervention
-active_mask = .!never_seeded
-plottable_active = GeoMakie.to_multipoly(dom.loc_data[active_mask, :geometry])
-
 for (scen_idx, scen_name) in enumerate(scenario_names)
-    diff = n_yrs_above[active_mask, scen_idx] .- n_yrs_above[active_mask, cf_idx]
-    max_abs = max(1, maximum(abs.(diff)))
+    scen_no_seeds  = total_seeds[:, scen_idx] .== 0
+    scen_has_seeds = .!scen_no_seeds
+
+    location_filter = active_mask # scen_has_seeds or active_mask
+    diff = n_yrs_above[location_filter, scen_idx] .- n_yrs_above[location_filter, cf_idx]
+    order = sortperm(diff)
 
     fig_map = Figure()
     ga_map = GeoAxis(
         fig_map[1, 1];
         dest="+proj=longlat +datum=WGS84",
         limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
-        title="Δ years above 20% target — $scen_name vs CF",
+        title="Δ years above 20% coral cover — $scen_name vs couterfactual",
         xgridcolor=(:gray, 0.15),
         ygridcolor=(:gray, 0.15),
+        xticklabelsize=7,
+        yticklabelsize=7,
     )
     poly!(ga_map, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
-    poly!(ga_map, plottable_gif; color=:gray80, strokewidth=0)
-    poly!(ga_map, plottable_active; color=diff, colormap=:RdBu,
-        colorrange=(-max_abs, max_abs), strokewidth=0)
+    #scatter!(ga_map, all_centroids[scen_no_seeds]; color=:gray80, markersize=3, alpha=0.5)
+    scatter!(ga_map, all_centroids[location_filter][order]; color=diff[order], colormap=Reverse(:vik25),
+        colorrange=(-10, 10), markersize=4, alpha=0.7)
     Colorbar(fig_map[1, 2];
-        colorrange=(-max_abs, max_abs),
-        colormap=:RdBu,
-        label="Δ years above 20% target (intervention − CF)",
+        colorrange=(-10, 10),
+        colormap=Reverse(:vik25),
+        label="Δ years above 20% coral cover (intervention − counterfactual)",
         height=Relative(0.65)
     )
     _gbr_annotations!(ga_map)
@@ -291,31 +342,37 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
 end
 
 # Cumulative functional diversity difference map per scenario
-fd_data = Array(ADRIA.metrics.coral_evenness(rs))   # (n_ts, n_locs, n_scens)
-cf_fd = fd_data[:, :, cf_idx]                        # (n_ts, n_locs)
+fd_data = Array(ADRIA.metrics.coral_evenness(rs))[1:ts_2060_idx, :, :]
+cf_fd = fd_data[:, :, cf_idx]
 cum_fd_diff = dropdims(sum(fd_data .- cf_fd; dims=1), dims=1)  # (n_locs, n_scens)
 
 for (scen_idx, scen_name) in enumerate(scenario_names)
-    diff_fd = cum_fd_diff[active_mask, scen_idx]
-    max_abs_fd = max(1e-6, maximum(abs.(diff_fd)))
+    scen_no_seeds  = total_seeds[:, scen_idx] .== 0
+    scen_has_seeds = .!scen_no_seeds
+
+    location_filter = active_mask # scen_has_seeds or active_mask
+    diff_fd = cum_fd_diff[location_filter, scen_idx]
+    order_fd = sortperm(diff_fd)
 
     fig_fd = Figure()
     ga_fd = GeoAxis(
         fig_fd[1, 1];
         dest="+proj=longlat +datum=WGS84",
         limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
-        title="Δ cumulative coral evenness — $scen_name vs CF",
+        title="Δ cumulative coral evenness — $scen_name vs counterfactual",
         xgridcolor=(:gray, 0.15),
         ygridcolor=(:gray, 0.15),
+        xticklabelsize=7,
+        yticklabelsize=7,
     )
     poly!(ga_fd, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
-    poly!(ga_fd, plottable_gif; color=:gray80, strokewidth=0)
-    poly!(ga_fd, plottable_active; color=diff_fd, colormap=:RdBu,
-        colorrange=(-max_abs_fd, max_abs_fd), strokewidth=0)
+    #scatter!(ga_fd, all_centroids[scen_no_seeds]; color=:gray80, markersize=3, alpha=0.5)
+    scatter!(ga_fd, all_centroids[location_filter][order_fd]; color=diff_fd[order_fd],
+             colormap=Reverse(:vik), colorrange=(-10, 10), markersize=4, alpha=0.7)
     Colorbar(fig_fd[1, 2];
-        colorrange=(-max_abs_fd, max_abs_fd),
-        colormap=:RdBu,
-        label="Δ cumulative coral evenness (intervention − CF)",
+        colorrange=(-10, 10),
+        colormap=Reverse(:vik),
+        label="Δ cumulative coral evenness (intervention − counterfactual)",
         height=Relative(0.65)
     )
     _gbr_annotations!(ga_fd)
