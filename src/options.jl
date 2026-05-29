@@ -140,8 +140,8 @@ metrics = Dict(
 # Selected locations GIF per intervention scenario
 ts_labels = ADRIA.timesteps(rs)[seed_ts]
 all_centroids = ADRIA.centroids(dom.loc_data)
-plottable_gif = GeoMakie.to_multipoly(dom.loc_data[:, :geometry])
 scenario_names = vcat(options.option_name, [:unguided])
+plottable_gif = GeoMakie.to_multipoly(dom.loc_data[:, :geometry])
 
 for (scen_idx, scen_name) in enumerate(scenario_names)
     seeded_points = Observable(Point2f[])
@@ -195,6 +195,80 @@ ax_hist_all = Axis(
 )
 hist!(ax_hist_all, seeding_freq_all; bins=0:5:100)
 save(joinpath(pd_config["plot_output_path"], "seeding_frequency_all.png"), fig_hist_all)
+
+# n_yrs_above_target choropleth map per scenario
+m_tac = Array(ADRIA.metrics.total_absolute_cover(rs)) .* 1e-6   # (n_ts, n_locs, n_scens) km²
+loc_hab_area_km2 = rs.loc_area .* rs.loc_max_coral_cover .* 1e-6 # (n_locs,)
+n_locs_total = size(m_tac, 2)
+
+n_yrs_above = Matrix{Int32}(undef, n_locs_total, nrow(scens))
+for s in 1:nrow(scens)
+    for l in 1:n_locs_total
+        thr = 0.20 * loc_hab_area_km2[l]
+        n_yrs_above[l, s] = Int32(count(m_tac[:, l, s] .>= thr))
+    end
+end
+
+cf_idx = nrow(scens)  # last scenario = no_intervention
+active_mask = .!never_seeded
+plottable_active = GeoMakie.to_multipoly(dom.loc_data[active_mask, :geometry])
+
+for (scen_idx, scen_name) in enumerate(scenario_names)
+    diff = n_yrs_above[active_mask, scen_idx] .- n_yrs_above[active_mask, cf_idx]
+    max_abs = max(1, maximum(abs.(diff)))
+
+    fig_map = Figure(; size=(700, 960), figure_padding=5)
+    ga_map = GeoAxis(
+        fig_map[1, 1];
+        dest="+proj=latlong +datum=WGS84",
+        title="Δ years above 20% target — $scen_name vs CF",
+        aspect=DataAspect(),
+        limits=((141.8, 153.7), (-25.2, -9.8)),
+        xgridwidth=0.5,
+        ygridwidth=0.5,
+    )
+    poly!(ga_map, plottable_gif; color=:gray80, strokewidth=0)
+    poly!(ga_map, plottable_active; color=diff, colormap=:RdBu,
+        colorrange=(-max_abs, max_abs), strokewidth=0)
+    Colorbar(fig_map[1, 2];
+        colorrange=(-max_abs, max_abs),
+        colormap=:RdBu,
+        label="Δ years above 20% target (intervention − CF)",
+        height=Relative(0.65)
+    )
+    save(joinpath(pd_config["plot_output_path"], "n_yrs_above_target_$(scen_name).png"), fig_map)
+end
+
+# Cumulative functional diversity difference map per scenario
+fd_data = Array(ADRIA.metrics.coral_evenness(rs))   # (n_ts, n_locs, n_scens)
+cf_fd = fd_data[:, :, cf_idx]                        # (n_ts, n_locs)
+cum_fd_diff = dropdims(sum(fd_data .- cf_fd; dims=1), dims=1)  # (n_locs, n_scens)
+
+for (scen_idx, scen_name) in enumerate(scenario_names)
+    diff_fd = cum_fd_diff[active_mask, scen_idx]
+    max_abs_fd = max(1e-6, maximum(abs.(diff_fd)))
+
+    fig_fd = Figure(; size=(700, 960), figure_padding=5)
+    ga_fd = GeoAxis(
+        fig_fd[1, 1];
+        dest="+proj=latlong +datum=WGS84",
+        title="Δ cumulative coral evenness — $scen_name vs CF",
+        aspect=DataAspect(),
+        limits=((141.8, 153.7), (-25.2, -9.8)),
+        xgridwidth=0.5,
+        ygridwidth=0.5,
+    )
+    poly!(ga_fd, plottable_gif; color=:gray80, strokewidth=0)
+    poly!(ga_fd, plottable_active; color=diff_fd, colormap=:RdBu,
+        colorrange=(-max_abs_fd, max_abs_fd), strokewidth=0)
+    Colorbar(fig_fd[1, 2];
+        colorrange=(-max_abs_fd, max_abs_fd),
+        colormap=:RdBu,
+        label="Δ cumulative coral evenness (intervention − CF)",
+        height=Relative(0.65)
+    )
+    save(joinpath(pd_config["plot_output_path"], "cum_fd_diff_$(scen_name).png"), fig_fd)
+end
 
 # Options time-series plot
 option_names = Symbol.(options.option_name)
