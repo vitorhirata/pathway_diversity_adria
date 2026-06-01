@@ -1,18 +1,19 @@
 #=
-PAW sensitivity analysis considering four main parameters:
+PAWN sensitivity analysis considering five main parameters:
 - dhw_scenario
 - min_iv_locations
 - N_seed
-- Seed weights
+- Seed weights (option)
+- RCP
 =#
 
 include("src/common.jl")
 using GeoMakie, GraphMakie, WGLMakie
 
-RCP = "45" # RCP 26, 45, 70
 seed_years = 30
+rcps = ["26", "45", "70"]
 dom = ADRIA.load_domain(
-    pd_config[:domain_path], RCP;
+    pd_config[:domain_path], rcps[1];
     calib_params_fn=pd_config["coral_param_path"],
     # timeframe: seed_years + 2 (start seeding), 5 (extra years)
     timeframe=(2022, 2022 + seed_years + 2 + 5)
@@ -54,42 +55,50 @@ options = ADRIA.analysis.option_seed_preference(; include_weights=true)
 dhw_scenarios = 1:11
 
 n_scens = length(N_seeds) * nrow(options) * length(dhw_scenarios) * length(min_locations)
-scens = repeat(ADRIA.sample(dom, 2)[1:1, :], n_scens)
-scens[!, :option] = zeros(Int, n_scens)
+scens_base = repeat(ADRIA.sample(dom, 2)[1:1, :], n_scens)
+scens_base[!, :option] = zeros(Int, n_scens)
 
 row = 1
 for N_seed in N_seeds, (opt_idx, option) in enumerate(eachrow(options)),
     dhw_scenario in dhw_scenarios, min_location in min_locations
 
-    scens[row, :N_seed_TA] = N_seed ÷ 5
-    scens[row, :N_seed_CA] = N_seed ÷ 5
-    scens[row, :N_seed_CNA] = N_seed ÷ 5
-    scens[row, :N_seed_SM] = N_seed ÷ 5
-    scens[row, :N_seed_LM] = N_seed ÷ 5
-    scens[row, :seed_heat_stress] = option[2]
-    scens[row, :seed_in_connectivity] = option[3]
-    scens[row, :seed_out_connectivity] = option[4]
-    scens[row, :seed_depth] = option[5]
-    scens[row, :seed_coral_cover] = option[6]
-    scens[row, :seed_cluster_diversity] = option[7]
-    scens[row, :seed_geographic_separation] = option[8]
-    scens[row, :seed_coral_diversity] = option[9]
-    scens[row, :dhw_scenario] = dhw_scenario
-    scens[row, :min_iv_locations] = min_location
-    scens[row, :option] = opt_idx
+    scens_base[row, :N_seed_TA] = N_seed ÷ 5
+    scens_base[row, :N_seed_CA] = N_seed ÷ 5
+    scens_base[row, :N_seed_CNA] = N_seed ÷ 5
+    scens_base[row, :N_seed_SM] = N_seed ÷ 5
+    scens_base[row, :N_seed_LM] = N_seed ÷ 5
+    scens_base[row, :seed_heat_stress] = option[2]
+    scens_base[row, :seed_in_connectivity] = option[3]
+    scens_base[row, :seed_out_connectivity] = option[4]
+    scens_base[row, :seed_depth] = option[5]
+    scens_base[row, :seed_coral_cover] = option[6]
+    scens_base[row, :seed_cluster_diversity] = option[7]
+    scens_base[row, :seed_geographic_separation] = option[8]
+    scens_base[row, :seed_coral_diversity] = option[9]
+    scens_base[row, :dhw_scenario] = dhw_scenario
+    scens_base[row, :min_iv_locations] = min_location
+    scens_base[row, :option] = opt_idx
     row += 1
 end
 
-rs = ADRIA.run_scenarios(dom, scens, RCP)
+# Run one ResultSet per RCP, adding rcp_idx as a factor column, then combine
+rs_list = []
+for (rcp_idx_val, rcp) in enumerate(rcps)
+    ADRIA.switch_RCPs!(dom, rcp)
+    scens_rcp = copy(scens_base)
+    scens_rcp[!, :rcp_idx] .= rcp_idx_val   # 1=RCP26, 2=RCP45, 3=RCP70
+    push!(rs_list, ADRIA.run_scenarios(dom, scens_rcp, rcp))
+end
+rs = ADRIA.combine_results(rs_list...)
 
 # Load scenario
-path = "Output/"
-rs = ADRIA.load_results(path)
+# path = "Output/"
+# rs = ADRIA.load_results(path)
 
 # Reefs that received seeding in every intervention scenario (across timesteps 2-32)
 seed_per_reef_per_scen = dropdims(
     sum(
-        rs.seed_log[timesteps=2:32, scenarios=1:(n_scens - 1)]; dims=(:timesteps, :coral_id)
+        rs.seed_log[timesteps=2:32, scenarios=1:nrow(rs.inputs)]; dims=(:timesteps, :coral_id)
     );
     dims=(:timesteps, :coral_id)
 )
@@ -122,7 +131,7 @@ metrics = [mean_s_tac, mean_s_rsv, mean_s_juves, mean_s_even]
 fig_opts = Dict(:size => (1600, 800))
 # Factors of Interest
 opts = Dict(
-    :factors => [:dhw_scenario, :N_seed_TA, :min_iv_locations, :option]
+    :factors => [:dhw_scenario, :N_seed_TA, :min_iv_locations, :option, :rcp_idx]
 )
 axis_opts = Dict(:title => "")
 titles = [
