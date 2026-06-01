@@ -325,6 +325,12 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         xticklabelsize=7,
         yticklabelsize=7,
     )
+    diff_all  = n_yrs_above[active_mask, scen_idx] .- n_yrs_above[active_mask, cf_idx]
+    ann_med = round(median(diff_all); digits=1)
+    ann_p25 = round(quantile(diff_all, 0.25); digits=1)
+    ann_p75 = round(quantile(diff_all, 0.75); digits=1)
+    ann_lat = _gbr_lat_max + 0.25 * (_gbr_lat_min - _gbr_lat_max)
+
     poly!(ga_map, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
     #scatter!(ga_map, all_centroids[scen_no_seeds]; color=:gray80, markersize=3, alpha=0.5)
     scatter!(ga_map, all_centroids[location_filter][order]; color=diff[order], colormap=Reverse(:vik25),
@@ -336,6 +342,9 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         height=Relative(0.65)
     )
     _gbr_annotations!(ga_map)
+    text!(ga_map, _gbr_lon_max - 0.2, ann_lat;
+        text="median=$(ann_med) ($(ann_p25)–$(ann_p75))",
+        align=(:right, :center), fontsize=8, color=:black)
     rowsize!(fig_map.layout, 1, Aspect(1, 1.0))
     resize_to_layout!(fig_map)
     save(joinpath(pd_config["plot_output_path"], "n_yrs_above_target_$(scen_name).png"), fig_map; px_per_unit=2)
@@ -365,6 +374,12 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         xticklabelsize=7,
         yticklabelsize=7,
     )
+    diff_fd_all = cum_fd_diff[active_mask, scen_idx]
+    ann_med_fd = round(median(diff_fd_all); digits=2)
+    ann_p25_fd = round(quantile(diff_fd_all, 0.25); digits=2)
+    ann_p75_fd = round(quantile(diff_fd_all, 0.75); digits=2)
+    ann_lat_fd = _gbr_lat_max + 0.25 * (_gbr_lat_min - _gbr_lat_max)
+
     poly!(ga_fd, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
     #scatter!(ga_fd, all_centroids[scen_no_seeds]; color=:gray80, markersize=3, alpha=0.5)
     scatter!(ga_fd, all_centroids[location_filter][order_fd]; color=diff_fd[order_fd],
@@ -376,10 +391,45 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         height=Relative(0.65)
     )
     _gbr_annotations!(ga_fd)
+    text!(ga_fd, _gbr_lon_max - 0.2, ann_lat_fd;
+        text="median=$(ann_med_fd) ($(ann_p25_fd)–$(ann_p75_fd))",
+        align=(:right, :center), fontsize=8, color=:black)
     rowsize!(fig_fd.layout, 1, Aspect(1, 1.0))
     resize_to_layout!(fig_fd)
     save(joinpath(pd_config["plot_output_path"], "cum_fd_diff_$(scen_name).png"), fig_fd; px_per_unit=2)
 end
+
+# Boxplots: performance metrics distribution per intervention scenario
+scen_labels = string.(scenario_names)
+n_active = sum(active_mask)
+x_scens = vcat([fill(i, n_active) for i in 1:length(scenario_names)]...)
+
+y_nyrs = vcat([
+    n_yrs_above[active_mask, s] .- n_yrs_above[active_mask, cf_idx]
+    for s in 1:length(scenario_names)
+]...)
+y_fd = vcat([cum_fd_diff[active_mask, s] for s in 1:length(scenario_names)]...)
+
+fig_box = Figure(; size=(1000, 450))
+ax_nyrs = Axis(fig_box[1, 1];
+    title="Δ years above 20% coral cover vs counterfactual",
+    ylabel="Δ years above 20% coral cover",
+    xticks=(1:length(scenario_names), scen_labels),
+    xticklabelrotation=π/4,
+)
+boxplot!(ax_nyrs, x_scens, Float64.(y_nyrs))
+hlines!(ax_nyrs, [0]; color=:black, linestyle=:dash, linewidth=1)
+
+ax_fd = Axis(fig_box[1, 2];
+    title="Δ cumulative coral evenness vs counterfactual",
+    ylabel="Δ cumulative coral evenness",
+    xticks=(1:length(scenario_names), scen_labels),
+    xticklabelrotation=π/4,
+)
+boxplot!(ax_fd, x_scens, y_fd)
+hlines!(ax_fd, [0]; color=:black, linestyle=:dash, linewidth=1)
+
+save(joinpath(pd_config["plot_output_path"], "performance_metrics_boxplot.png"), fig_box; px_per_unit=2)
 
 # Options time-series plot
 option_names = Symbol.(options.option_name)
