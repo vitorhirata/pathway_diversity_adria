@@ -10,8 +10,12 @@ include("src/common.jl")
 using GeoMakie, GraphMakie, WGLMakie
 
 RCP = "45" # RCP 26, 45, 70
+seed_years = 30
 dom = ADRIA.load_domain(
-    pd_config[:domain_path], RCP; calib_params_fn=pd_config[:coral_param_path]
+    pd_config[:domain_path], RCP;
+    calib_params_fn=pd_config["coral_param_path"],
+    # timeframe: seed_years + 2 (start seeding), 5 (extra years)
+    timeframe=(2022, 2022 + seed_years + 2 + 5)
 )
 ms = ADRIA.model_spec(dom)
 
@@ -33,7 +37,7 @@ ADRIA.fix_factor!(dom;
     SRM=0.0,                   # No shadding
     # Seending intervention parameters
     seed_year_start=2,         # Start as soon as possible
-    seed_years=30,
+    seed_years=seed_years,
     seed_deployment_freq=1,    # Lower bound of sampling distribution. Seed every year
     seed_strategy=1,           # Periodic seed deployment
     seeding_devices_per_m2=5,

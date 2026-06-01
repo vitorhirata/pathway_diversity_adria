@@ -8,8 +8,12 @@ include("src/common.jl")
 using Bootstrap
 
 RCP = "45"
+seed_years = 30
 dom = ADRIA.load_domain(
-    pd_config["domain_path"], RCP; calib_params_fn=pd_config["coral_param_path"]
+    pd_config["domain_path"], RCP;
+    calib_params_fn=pd_config["coral_param_path"],
+    # timeframe: seed_years + 2 (start seeding), 5 (extra years)
+    timeframe=(2022, 2022 + seed_years + 2 + 5)
 )
 
 ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
@@ -32,7 +36,7 @@ ADRIA.fix_factor!(
     SRM=0.0,
     # Seeding parameters
     seed_year_start=2,
-    seed_years=30,
+    seed_years=seed_years,
     seed_deployment_freq=1,
     seed_strategy=1,        # Periodic deployment
     seeding_devices_per_m2=5,
