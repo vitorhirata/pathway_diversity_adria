@@ -10,10 +10,10 @@ Main parameters varied:
 include("src/common.jl")
 using WGLMakie, GeoMakie, GraphMakie
 
-RCP = "26" # RCP 26, 45, 70
+rcps = ["26", "45", "70"]
 seed_years = 20
 dom = ADRIA.load_domain(
-    pd_config["domain_path"], RCP;
+    pd_config["domain_path"], rcps[1];
     calib_params_fn=pd_config["coral_param_path"],
     # timeframe: seed_years + 2 (start seeding), 5 (extra years)
     timeframe=(2022, 2022 + seed_years + 2 + 5)
@@ -90,8 +90,7 @@ end
 scens = vcat(scens...)
 
 # Run scenarios
-#rs = ADRIA.run_scenarios(dom, scens[1:2,:], RCP)
-rs = ADRIA.run_scenarios(dom, scens, RCP)
+rs = ADRIA.run_scenarios(dom, scens, rcps)
 
 # ----------------------------------------------------------
 # Load scenarios

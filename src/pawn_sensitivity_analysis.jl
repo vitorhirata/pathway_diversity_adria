@@ -82,14 +82,7 @@ for N_seed in N_seeds, (opt_idx, option) in enumerate(eachrow(options)),
 end
 
 # Run one ResultSet per RCP, adding rcp_idx as a factor column, then combine
-rs_list = []
-for (rcp_idx_val, rcp) in enumerate(rcps)
-    ADRIA.switch_RCPs!(dom, rcp)
-    scens_rcp = copy(scens_base)
-    scens_rcp[!, :rcp_idx] .= rcp_idx_val   # 1=RCP26, 2=RCP45, 3=RCP70
-    push!(rs_list, ADRIA.run_scenarios(dom, scens_rcp, rcp))
-end
-rs = ADRIA.combine_results(rs_list...)
+rs = ADRIA.run_scenarios(dom, scens_base, rcps)
 
 # Load scenario
 # path = "Output/"
@@ -131,7 +124,7 @@ metrics = [mean_s_tac, mean_s_rsv, mean_s_juves, mean_s_even]
 fig_opts = Dict(:size => (1600, 800))
 # Factors of Interest
 opts = Dict(
-    :factors => [:dhw_scenario, :N_seed_TA, :min_iv_locations, :option, :rcp_idx]
+    :factors => [:dhw_scenario, :N_seed_TA, :min_iv_locations, :option, :RCP]
 )
 axis_opts = Dict(:title => "")
 titles = [
