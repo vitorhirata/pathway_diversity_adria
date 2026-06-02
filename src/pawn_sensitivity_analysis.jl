@@ -8,12 +8,12 @@ PAWN sensitivity analysis considering five main parameters:
 =#
 
 include("src/common.jl")
-using GeoMakie, GraphMakie, WGLMakie
+using GeoMakie, GraphMakie, CairoMakie
 
 seed_years = 30
 rcps = ["26", "45", "70"]
 dom = ADRIA.load_domain(
-    pd_config[:domain_path], rcps[1];
+    pd_config["domain_path"], rcps[1];
     calib_params_fn=pd_config["coral_param_path"],
     # timeframe: seed_years + 2 (start seeding), 5 (extra years)
     timeframe=(2022, 2022 + seed_years + 2 + 5)
@@ -91,7 +91,8 @@ rs = ADRIA.run_scenarios(dom, scens_base, rcps)
 # Reefs that received seeding in every intervention scenario (across timesteps 2-32)
 seed_per_reef_per_scen = dropdims(
     sum(
-        rs.seed_log[timesteps=2:32, scenarios=1:nrow(rs.inputs)]; dims=(:timesteps, :coral_id)
+        rs.seed_log[timesteps=2:32, scenarios=1:nrow(rs.inputs)];
+        dims=(:timesteps, :coral_id)
     );
     dims=(:timesteps, :coral_id)
 )
@@ -124,7 +125,7 @@ metrics = [mean_s_tac, mean_s_rsv, mean_s_juves, mean_s_even]
 fig_opts = Dict(:size => (1600, 800))
 # Factors of Interest
 opts = Dict(
-    :factors => [:dhw_scenario, :N_seed_TA, :min_iv_locations, :option, :RCP]
+    :factors => [:RCP, :dhw_scenario, :N_seed_TA, :min_iv_locations, :option]
 )
 axis_opts = Dict(:title => "")
 titles = [
@@ -147,5 +148,6 @@ for (idx, metric) in enumerate(metrics)
         label="Relative Sensitivity",
         height=Relative(0.65)
     )
-    save(joinpath(pd_config["plot_output_path"], "pawn_si_$(idx).png"), f)
+    title_clear = replace(lowercase(titles[idx]), " " => "_")
+    save(joinpath(pd_config["plot_output_path"], "pawn_$(title_clear).png"), f)
 end
