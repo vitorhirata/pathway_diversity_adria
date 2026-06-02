@@ -8,7 +8,7 @@ Main parameters varied:
 =#
 
 include("src/common.jl")
-using WGLMakie, GeoMakie, GraphMakie
+using WGLMakie, GraphMakie, CairoMakie
 
 rcps = ["26", "45", "70"]
 seed_years = 20
@@ -94,18 +94,8 @@ rs = ADRIA.run_scenarios(dom, scens, rcps)
 
 # ----------------------------------------------------------
 # Load scenarios
-#rs = ADRIA.load_results("./Outputs/ReefMod Engine__RCPs_26__2025-04-23_18_46_19_610")
-#
-#rss = [
-#    ADRIA.load_results("./Outputs/ReefMod Engine__RCPs_26__2025-04-16_21_39_48_820"),
-#    ADRIA.load_results("./Outputs/ReefMod Engine__RCPs_45__2025-04-16_19_07_38_604"),
-#    ADRIA.load_results("./Outputs/ReefMod Engine__RCPs_70__2025-04-16_22_09_59_770")
-#]
-rss = [
-    ADRIA.load_results("./Outputs/ReefMod Engine__RCPs_26__2025-04-23_18_46_19_610"),
-    ADRIA.load_results("./Outputs/ReefMod Engine__RCPs_45__2025-04-24_12_40_27_234"),
-    ADRIA.load_results("./Outputs/ReefMod Engine__RCPs_70__2025-04-25_10_35_04_772")
-]
+# path = ""
+# rs = ADRIA.load_results(path)
 
 options = DataFrame(;
     option_name=String[],
@@ -115,23 +105,21 @@ options = DataFrame(;
     n_locations=Int64[],
     rcp=String[]
 )
-rcps = ["26", "45", "70"]
-for (idx_rcp, rcp) in enumerate(rcps)
-    rs = rss[idx_rcp]
-    for param in params
-        println(param)
-        condition =
-            scens.N_seed_CA .== param[1] .&&
-            scens.min_iv_locations .== param[2] .&&
-            scens.dhw_scenario .== param[3]
-        idx_scens = findall(condition)
-        tmp_options = ADRIA.analysis.pathway_diversity(rs, scens, idx_scens)
-        tmp_options.N_seed = fill(param[1], size(tmp_options, 1))
-        tmp_options.n_locations = fill(param[2], size(tmp_options, 1))
-        tmp_options.dhw_scenario = fill(param[3], size(tmp_options, 1))
-        tmp_options.rcp = fill(rcp, size(tmp_options, 1))
-        global options = vcat(options, tmp_options)
-    end
+
+for param in params, rcp in rcps
+    condition =
+        rs.inputs.N_seed_CA .== param[1] * N_seed_weights.N_seed_CA .&&
+        rs.inputs.N_seed_TA .== param[1] * N_seed_weights.N_seed_TA .&&
+        rs.inputs.min_iv_locations .== param[2] .&&
+        rs.inputs.dhw_scenario .== param[3] .&&
+        rs.inputs.RCP .== rcp
+    idx_scens = findall(condition)
+    tmp_options = ADRIA.analysis.pathway_diversity(rs, idx_scens, 0)
+    tmp_options.N_seed = fill(param[1], size(tmp_options, 1))
+    tmp_options.n_locations = fill(param[2], size(tmp_options, 1))
+    tmp_options.dhw_scenario = fill(param[3], size(tmp_options, 1))
+    tmp_options.rcp = fill(rcp, size(tmp_options, 1))
+    global options = vcat(options, tmp_options)
 end
 
 CSV.write(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), options)
@@ -141,7 +129,7 @@ options = CSV.read(
 
 # RCP plot
 option_fix_seed = options[
-    options.N_seed .== 1e8 .&& options.n_locations .== 200,
+    options.N_seed .== 1e7 .&& options.n_locations .== 200,
     [:option_name, :pathway_diversity, :dhw_scenario, :rcp]
 ]
 
@@ -200,7 +188,7 @@ option_fix_rcp = options[
 option_fix_rcp.seed =
     string.(option_fix_rcp.N_seed) .* "_" .* string.(option_fix_rcp.n_locations)
 option_fix_rcp = option_fix_rcp[
-    option_fix_rcp.seed .∈ [["100_15", "1000000_200", "100000000_200", "10000000000_1000"]],
+    option_fix_rcp.seed .∈ [["100_15", "1000000_200", "10000000_200", "100000000_200"]],
     [:option_name,
         :pathway_diversity,
         :dhw_scenario,
@@ -252,14 +240,12 @@ elements = [PolyElement(; polycolor=palette[i]) for i in 1:length(unique_seed)]
 Legend(
     fig[1, 2],
     elements,
-    ["100", "1 million", "100 million", "10 billion"],
+    ["100", "1 million", "10 million", "100 million"],
     "Number of seeds"
 )
 save(joinpath(pd_config["plot_output_path"], "pathway_diversity_seed.png"), fig)
 
-# Cover by scenario
-rs = rss[2]
-
+# Cover by scenario # TODO: change plot
 s_tac = ADRIA.metrics.scenario_total_cover(rs)
 idx_fix_param = findall(
     scens.N_seed_CA .== 1e10 .&& scens.min_iv_locations .== 1000 .&&
