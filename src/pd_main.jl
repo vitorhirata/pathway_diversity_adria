@@ -107,12 +107,13 @@ options = DataFrame(;
 )
 
 for param in params, rcp in rcps
+    @info "param $(param), RCP $(rcp)"
     condition =
         rs.inputs.N_seed_CA .== param[1] * N_seed_weights.N_seed_CA .&&
         rs.inputs.N_seed_TA .== param[1] * N_seed_weights.N_seed_TA .&&
         rs.inputs.min_iv_locations .== param[2] .&&
         rs.inputs.dhw_scenario .== param[3] .&&
-        rs.inputs.RCP .== rcp
+        rs.inputs.RCP .== parse(Float64, rcp)
     idx_scens = findall(condition)
     tmp_options = ADRIA.analysis.pathway_diversity(rs, idx_scens, 0)
     tmp_options.N_seed = fill(param[1], size(tmp_options, 1))
@@ -126,6 +127,9 @@ CSV.write(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), opti
 options = CSV.read(
     joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), DataFrame
 )
+
+min_pd = floor(minimum(options.pathway_diversity) * 0.98; digits=1)
+max_pd = ceil(maximum(options.pathway_diversity) * 1.02; digits=1)
 
 # RCP plot
 option_fix_seed = options[
@@ -152,13 +156,13 @@ rcp_map = Dict(rcp => i for (i, rcp) in enumerate(unique_rcp))
 option_fix_seed.rcp_idx = [rcp_map[rcp] for rcp in option_fix_seed.rcp]
 
 # Plot RCP figure
-fig = Figure(; size=(800, 600))
+fig = Figure(; size=(800, 300))
 ax = Axis(fig[1, 1];
     xlabel="Option Name",
     ylabel="Pathway Diversity",
-    yticks=(4.5:0.05:5.0),
+    yticks=(min_pd:round((max_pd - min_pd) / 5; digits=2):max_pd),
     xticks=(1:length(unique_options), string.(unique_options)),
-    limits=(nothing, (4.5, 5.0))
+    limits=(nothing, (min_pd, max_pd))
 )
 palette = Makie.current_default_theme().palette.color[]
 barplot!(
@@ -168,13 +172,18 @@ barplot!(
     dodge=option_fix_seed.rcp_idx,
     color=[palette[i] for i in option_fix_seed.rcp_idx]
 )
-crossbar!(
+
+n_dodge = length(unique_rcp)
+dodge_offsets = [(i - (n_dodge + 1) / 2) * (0.8 / n_dodge) for i in 1:n_dodge]
+dodged_x = option_fix_seed.option_idx .+ [dodge_offsets[i] for i in option_fix_seed.rcp_idx]
+errorbars!(
     ax,
-    option_fix_seed.option_idx,
+    dodged_x,
     option_fix_seed.mean_pd,
-    option_fix_seed.min_pd, option_fix_seed.max_pd;
-    dodge=option_fix_seed.rcp_idx,
-    color=(:gray50, 0.8)
+    option_fix_seed.mean_pd .- option_fix_seed.min_pd,
+    option_fix_seed.max_pd .- option_fix_seed.mean_pd;
+    color=:black,
+    whiskerwidth=6
 )
 elements = [PolyElement(; polycolor=palette[i]) for i in 1:length(unique_rcp)]
 Legend(fig[1, 2], elements, string.(unique_rcp), "RCP")
@@ -182,7 +191,7 @@ save(joinpath(pd_config["plot_output_path"], "pathway_diversity_rcp.png"), fig)
 
 # seed plot
 option_fix_rcp = options[
-    options.rcp .== "45",
+    options.rcp .== 45,
     [:option_name, :pathway_diversity, :dhw_scenario, :N_seed, :n_locations]
 ]
 option_fix_rcp.seed =
@@ -212,13 +221,13 @@ seed_map = Dict(seed => i for (i, seed) in enumerate(unique_seed))
 option_fix_rcp.seed_idx = [seed_map[seed] for seed in option_fix_rcp.seed]
 
 # Plot seed figure
-fig = Figure(; size=(800, 600))
+fig = Figure(; size=(800, 300))
 ax = Axis(fig[1, 1];
     xlabel="Option Name",
     ylabel="Pathway Diversity",
-    yticks=(4.5:0.05:5.0),
+    yticks=(min_pd:round((max_pd - min_pd) / 5; digits=2):max_pd),
     xticks=(1:length(unique_options), string.(unique_options)),
-    limits=(nothing, (4.5, 5.0))
+    limits=(nothing, (min_pd, max_pd))
 )
 palette = Makie.current_default_theme().palette.color[]
 barplot!(
@@ -228,13 +237,18 @@ barplot!(
     dodge=option_fix_rcp.seed_idx,
     color=[palette[i] for i in option_fix_rcp.seed_idx]
 )
-crossbar!(
+
+n_dodge = length(unique_seed)
+dodge_offsets = [(i - (n_dodge + 1) / 2) * (0.8 / n_dodge) for i in 1:n_dodge]
+dodged_x = option_fix_rcp.option_idx .+ [dodge_offsets[i] for i in option_fix_rcp.seed_idx]
+errorbars!(
     ax,
-    option_fix_rcp.option_idx,
+    dodged_x,
     option_fix_rcp.mean_pd,
-    option_fix_rcp.min_pd, option_fix_rcp.max_pd;
-    dodge=option_fix_rcp.seed_idx,
-    color=(:gray50, 0.8)
+    option_fix_rcp.mean_pd .- option_fix_rcp.min_pd,
+    option_fix_rcp.max_pd .- option_fix_rcp.mean_pd;
+    color=:black,
+    whiskerwidth=6
 )
 elements = [PolyElement(; polycolor=palette[i]) for i in 1:length(unique_seed)]
 Legend(
