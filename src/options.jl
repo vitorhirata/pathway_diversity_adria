@@ -415,7 +415,7 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
 end
 
 # Cumulative functional diversity difference map per scenario
-fd_data = Array(ADRIA.metrics.coral_evenness(rs))[1:ts_2060_idx, :, :]
+fd_data = Array(ADRIA.metrics.coral_evenness(rs))
 cf_fd = fd_data[:, :, cf_idx]
 cum_fd_diff = dropdims(sum(fd_data .- cf_fd; dims=1); dims=1)  # (n_locs, n_scens)
 
