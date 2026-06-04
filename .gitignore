@@ -2,3 +2,5 @@
 .png
 config.toml
 Outputs/
+.JuliaFormatter.toml
+.claude/
