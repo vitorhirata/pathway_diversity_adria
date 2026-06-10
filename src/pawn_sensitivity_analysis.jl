@@ -122,12 +122,25 @@ mean_s_juves = vec(mean(s_juves; dims=1))
 metrics = [mean_s_tac, mean_s_rsv, mean_s_juves, mean_s_even]
 
 # Some shared options for the example plots below
-fig_opts = Dict(:size => (1600, 800))
+fig_opts = Dict(:size => (800, 400))
 # Factors of Interest
 opts = Dict(
-    :factors => [:RCP, :dhw_scenario, :N_seed_TA, :min_iv_locations, :option]
+    :factors => [:dhw_scenario, :RCP, :option, :min_iv_locations, :N_seed_TA],
+    :by => :none,
+    :ytick_labels => [
+        "Climate Model",
+        "RCP",
+        "Option",
+        "Number of locations",
+        "Number of seeds"
+    ]
 )
-axis_opts = Dict(:title => "")
+axis_opts = Dict(
+    :title => "",
+    :titlesize => 22,
+    :xticklabelsize => 20,
+    :yticklabelsize => 20
+)
 titles = [
     "Total absolute cover",
     "Relative Shelter Volume",
@@ -146,6 +159,8 @@ for (idx, metric) in enumerate(metrics)
         colormap=:viridis,
         colorrange=(0, 1),
         label="Relative Sensitivity",
+        labelsize=22,
+        ticklabelsize=20,
         height=Relative(0.65)
     )
     title_clear = replace(lowercase(titles[idx]), " " => "_")
