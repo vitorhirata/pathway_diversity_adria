@@ -132,7 +132,7 @@ opts = Dict(
         "RCP",
         "Option",
         "Number of locations",
-        "Number of seeds"
+        "Number of corals deployed"
     ]
 )
 axis_opts = Dict(

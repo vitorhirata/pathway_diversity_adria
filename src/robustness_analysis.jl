@@ -118,8 +118,8 @@ rs = ADRIA.run_scenarios(dom, scens, rcps)
 tail_fraction = 0.05
 metric_labels = [
     "Years >20% coral cover\n(worst reefs)", "Years >20% coral cover\n(best reefs)",
-    "Cum. cover\n(worst reefs)", "Cum. cover\n(best reefs)",
-    "Cum. evenness\n(worst reefs)", "Cum. evenness\n(best reefs)"
+    "Cumulative cover\n(worst reefs)", "Cumulative cover\n(best reefs)",
+    "Cumulative evenness\n(worst reefs)", "Cumulative evenness\n(best reefs)"
 ]
 
 """

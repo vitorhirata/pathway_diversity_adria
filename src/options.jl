@@ -312,7 +312,7 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
         fig_seeds[1, 1];
         dest="+proj=longlat +datum=WGS84",
         limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
-        title="Total seeds per location — $scen_name",
+        title="Total deployed coral per location — $scen_name",
         xgridcolor=(:gray, 0.15),
         ygridcolor=(:gray, 0.15),
         xticklabelsize=7,
@@ -333,7 +333,7 @@ for (scen_idx, scen_name) in enumerate(scenario_names)
     Colorbar(fig_seeds[1, 2];
         colorrange=seed_colorrange,
         colormap=:viridis,
-        label="Total seeds",
+        label="Total deployed coral",
         height=Relative(0.65)
     )
     _gbr_annotations!(ga_seeds)

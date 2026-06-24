@@ -133,7 +133,7 @@ max_pd = ceil(maximum(options.pathway_diversity) * 1.02; digits=1)
 
 # RCP plot
 option_fix_seed = options[
-    options.N_seed .== 1e7 .&& options.n_locations .== 200,
+    options.N_seed .== 1e7 .&& options.n_locations .== 200 .&& options.rcp .!= 26,
     [:option_name, :pathway_diversity, :dhw_scenario, :rcp]
 ]
 
@@ -151,31 +151,41 @@ unique_options = unique(options.option_name)
 option_map = Dict(opt => i for (i, opt) in enumerate(unique_options))
 option_fix_seed.option_idx = [option_map[opt] for opt in option_fix_seed.option_name]
 
-unique_rcp = unique(option_fix_seed.rcp)
+unique_rcp = sort(unique(option_fix_seed.rcp))
 rcp_map = Dict(rcp => i for (i, rcp) in enumerate(unique_rcp))
 option_fix_seed.rcp_idx = [rcp_map[rcp] for rcp in option_fix_seed.rcp]
+
+# Within each RCP, rank options by descending pathway diversity so the
+# highest-value option appears first (leftmost)
+option_fix_seed = combine(groupby(option_fix_seed, :rcp_idx)) do subdf
+    subdf = sort(subdf, :mean_pd; rev=true)
+    subdf.dodge_idx = 1:nrow(subdf)
+    subdf
+end
+sort!(option_fix_seed, [:rcp_idx, :dodge_idx])
 
 # Plot RCP figure
 fig = Figure(; size=(800, 300))
 ax = Axis(fig[1, 1];
-    xlabel="Option Name",
+    xlabel="RCP",
     ylabel="Pathway Diversity",
     yticks=(min_pd:round((max_pd - min_pd) / 5; digits=2):max_pd),
-    xticks=(1:length(unique_options), string.(unique_options)),
+    xticks=(1:length(unique_rcp), string.(unique_rcp)),
     limits=(nothing, (min_pd, max_pd))
 )
 palette = Makie.current_default_theme().palette.color[]
 barplot!(
     ax,
-    option_fix_seed.option_idx,
+    option_fix_seed.rcp_idx,
     option_fix_seed.mean_pd;
-    dodge=option_fix_seed.rcp_idx,
-    color=[palette[i] for i in option_fix_seed.rcp_idx]
+    dodge=option_fix_seed.dodge_idx,
+    color=[palette[i] for i in option_fix_seed.option_idx]
 )
 
-n_dodge = length(unique_rcp)
+n_dodge = length(unique_options)
 dodge_offsets = [(i - (n_dodge + 1) / 2) * (0.8 / n_dodge) for i in 1:n_dodge]
-dodged_x = option_fix_seed.option_idx .+ [dodge_offsets[i] for i in option_fix_seed.rcp_idx]
+dodged_x =
+    option_fix_seed.rcp_idx .+ [dodge_offsets[i] for i in option_fix_seed.dodge_idx]
 errorbars!(
     ax,
     dodged_x,
@@ -185,8 +195,8 @@ errorbars!(
     color=:black,
     whiskerwidth=6
 )
-elements = [PolyElement(; polycolor=palette[i]) for i in 1:length(unique_rcp)]
-Legend(fig[1, 2], elements, string.(unique_rcp), "RCP")
+elements = [PolyElement(; polycolor=palette[i]) for i in 1:length(unique_options)]
+Legend(fig[1, 2], elements, string.(unique_options), "Option")
 save(joinpath(pd_config["plot_output_path"], "pathway_diversity_rcp.png"), fig)
 
 # seed plot
