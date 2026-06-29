@@ -97,16 +97,48 @@ rs = ADRIA.run_scenarios(dom, scens, rcps)
 # path = ""
 # rs = ADRIA.load_results(path)
 
+# Pathway diversity options ordering and decision metadata
+option_names = ADRIA.analysis.option_seed_preference().option_name
+n_options = length(option_names)
+seed_year_start = Int64(rs.inputs.seed_year_start[1])
+
+# All (param, rcp) combinations, in the same order used to fill the tables below
+param_rcp = [(param, rcp) for param in params for rcp in rcps]
+
+# Per-option pathway diversity table, pre-allocated with all params/rcp/option rows
+n_rows = length(param_rcp) * n_options
 options = DataFrame(;
-    option_name=String[],
-    pathway_diversity=Float64[],
-    N_seed=Int64[],
-    dhw_scenario=Int64[],
-    n_locations=Int64[],
-    rcp=String[]
+    option_name=Vector{String}(undef, n_rows),
+    pathway_diversity=zeros(n_rows),
+    N_seed=Vector{Int64}(undef, n_rows),
+    dhw_scenario=Vector{Int64}(undef, n_rows),
+    n_locations=Vector{Int64}(undef, n_rows),
+    rcp=Vector{String}(undef, n_rows)
+)
+for (block, (param, rcp)) in enumerate(param_rcp)
+    base = (block - 1) * n_options
+    for (i, option) in enumerate(option_names)
+        options.option_name[base + i] = string(option)
+        options.N_seed[base + i] = Int64(param[1])
+        options.dhw_scenario[base + i] = Int64(param[3])
+        options.n_locations[base + i] = Int64(param[2])
+        options.rcp[base + i] = rcp
+    end
+end
+
+# Per-scenario probability table (all scenarios), filled inside the loop
+scenario_probs = DataFrame(;
+    option_ts=rs.inputs.option_ts,
+    N_seed=round.(Int64,
+        rs.inputs.N_seed_TA .+ rs.inputs.N_seed_CA .+ rs.inputs.N_seed_CNA .+
+        rs.inputs.N_seed_SM .+ rs.inputs.N_seed_LM),
+    dhw_scenario=Int64.(rs.inputs.dhw_scenario),
+    n_locations=Int64.(rs.inputs.min_iv_locations),
+    rcp=string.(Int64.(rs.inputs.RCP)),
+    probability=zeros(size(rs.inputs, 1))
 )
 
-for param in params, rcp in rcps
+for (block, (param, rcp)) in enumerate(param_rcp)
     @info "param $(param), RCP $(rcp)"
     condition =
         rs.inputs.N_seed_CA .== param[1] * N_seed_weights.N_seed_CA .&&
@@ -115,17 +147,27 @@ for param in params, rcp in rcps
         rs.inputs.dhw_scenario .== param[3] .&&
         rs.inputs.RCP .== parse(Float64, rcp)
     idx_scens = findall(condition)
-    tmp_options = ADRIA.analysis.pathway_diversity(rs, idx_scens, 0)
-    tmp_options.N_seed = fill(param[1], size(tmp_options, 1))
-    tmp_options.n_locations = fill(param[2], size(tmp_options, 1))
-    tmp_options.dhw_scenario = fill(param[3], size(tmp_options, 1))
-    tmp_options.rcp = fill(rcp, size(tmp_options, 1))
-    global options = vcat(options, tmp_options)
+
+    scenario_result = ADRIA.analysis.pathway_diversity(rs, idx_scens; scenario_probabilities=true)
+
+    # Fill the global per-scenario probability table at the returned scenario indices
+    scenario_probs.probability[scenario_result.scenario_idx] = scenario_result.probability
+
+    # Aggregate per starting option and compute pathway diversity
+    base = (block - 1) * n_options
+    for (i, option) in enumerate(option_names)
+        mask = [ts[seed_year_start] == option for ts in scenario_result.decoded_ts]
+        probs = scenario_result.probability[mask]
+        options.pathway_diversity[base + i] = sum(ADRIA.analysis._entropy.(probs))
+    end
 end
 
 CSV.write(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), options)
 options = CSV.read(
     joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), DataFrame
+)
+CSV.write(
+    joinpath(pd_config["plot_output_path"], "scenario_probabilities.csv"), scenario_probs
 )
 
 min_pd = floor(minimum(options.pathway_diversity) * 0.98; digits=1)

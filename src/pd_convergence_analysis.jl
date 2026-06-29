@@ -44,7 +44,7 @@ for (_, w) in enumerate(weights)
     for _ in 1:n_reps
         idx_sample = sort(StatsBase.sample(idx_scens_all, n_keep; replace=false))
         removed_pathways = length(idx_scens_all) - n_keep
-        pd_w = ADRIA.analysis.pathway_diversity(rs, idx_sample, removed_pathways)
+        pd_w = ADRIA.analysis.pathway_diversity(rs, idx_sample; removed_pathways=removed_pathways)
         for pd_row in eachrow(pd_w)
             ref_val = pd_ref[pd_ref.option_name .== pd_row.option_name, :pathway_diversity][1]
             results[row_idx, :weight] = w

@@ -275,7 +275,7 @@ save(joinpath(pd_config["plot_output_path"], "pd_figures", "option_scores.png"),
 # ----------------------------------------------------------
 # Probability distribution histogram
 n_bins = 50
-all_probs = [ADRIA.analysis.pathway_diversity(rs, idx_scens, option) for option in option_names]
+all_probs = ADRIA.analysis.pathway_diversity(rs, idx_scens; scenario_probabilities=true).probability
 # Shared bin edges so every panel uses the same x-scale and aligned bins
 edges = range(minimum(minimum.(all_probs)), maximum(maximum.(all_probs)); length=n_bins + 1)
 
