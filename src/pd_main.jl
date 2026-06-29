@@ -8,7 +8,7 @@ Main parameters varied:
 =#
 
 include("src/common.jl")
-using WGLMakie, GraphMakie, CairoMakie
+using GraphMakie, CairoMakie, SankeyMakie
 
 rcps = ["26", "45", "70"]
 seed_years = 20
@@ -163,11 +163,15 @@ for (block, (param, rcp)) in enumerate(param_rcp)
 end
 
 CSV.write(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), options)
+CSV.write(
+    joinpath(pd_config["plot_output_path"], "scenario_probabilities.csv"), scenario_probs
+)
+
 options = CSV.read(
     joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), DataFrame
 )
-CSV.write(
-    joinpath(pd_config["plot_output_path"], "scenario_probabilities.csv"), scenario_probs
+scenario_probs = CSV.read(
+    joinpath(pd_config["plot_output_path"], "scenario_probabilities.csv"), DataFrame
 )
 
 min_pd = floor(minimum(options.pathway_diversity) * 0.98; digits=1)
@@ -344,3 +348,89 @@ tsc_fig = ADRIA.viz.clustered_scenarios(
     s_tac_clean, clusters; opts=opts, fig_opts=fig_opts, axis_opts=axis_opts
 )
 save(joinpath(pd_config["plot_output_path"], "scenarios_tac.png"), tsc_fig)
+
+# ----------------------------------------------------------
+# Sankey diagram of option pathways
+# Visualises, for a given parameter set, how probability mass flows between options
+# across the `number_changes` decision points. Layer k = decision point k, node height =
+# marginal probability of an option at that step, ribbon width = joint probability of the
+# A→B transition between consecutive steps.
+
+number_changes = seed_years ÷ pd_frequency
+max_time = size(rs.seed_log, :timesteps)
+# Timesteps of the decision points within the seeding window
+decision_steps = [seed_year_start + (k - 1) * pd_frequency for k in 1:number_changes]
+
+function plot_sankey(df, option_names, number_changes; title="")
+    n_opt = length(option_names)
+    opt_idx = Dict(o => i for (i, o) in enumerate(option_names))
+    palette = Makie.current_default_theme().palette.color[]
+    node(k, o) = (k - 1) * n_opt + o  # unique node id per (decision point, option)
+
+    # Joint A→B transition mass between consecutive decision points
+    link_mass = [zeros(n_opt, n_opt) for _ in 1:(number_changes - 1)]
+    for row in eachrow(df)
+        ts = ADRIA.analysis.decode_option_ts(
+            row.option_ts, seed_year_start, seed_years, pd_frequency, max_time
+        )
+        path = ts[decision_steps]
+        for k in 1:(number_changes - 1)
+            link_mass[k][opt_idx[path[k]], opt_idx[path[k + 1]]] += row.probability
+        end
+    end
+
+    # Build (source, target, weight) connections
+    connections = Tuple{Int,Int,Float64}[]
+    for k in 1:(number_changes - 1), a in 1:n_opt, b in 1:n_opt
+        m = link_mass[k][a, b]
+        m <= 0 && continue
+        push!(connections, (node(k, a), node(k + 1, b), m))
+    end
+
+    # Compact node ids so SankeyMakie has no isolated (unconnected) nodes
+    used = sort(unique(vcat([c[1] for c in connections], [c[2] for c in connections])))
+    remap = Dict(id => i for (i, id) in enumerate(used))
+    connections = [(remap[s], remap[t], w) for (s, t, w) in connections]
+    nodelabels = [string(option_names[(id - 1) % n_opt + 1]) for id in used]
+    nodecolors = [palette[(id - 1) % n_opt + 1] for id in used]
+
+    # Force every column to follow `option_names` order (top to bottom), independent of
+    # link weights. SankeyMakie needs the *full* pairwise constraint set per layer, and
+    # `b => a` (for a < b) places option a above option b.
+    forceorder = Pair{Int,Int}[]
+    for k in 1:number_changes, a in 1:n_opt, b in (a + 1):n_opt
+        (haskey(remap, node(k, a)) && haskey(remap, node(k, b))) || continue
+        push!(forceorder, remap[node(k, b)] => remap[node(k, a)])
+    end
+
+    fig = Figure(; size=(1100, 650))
+    ax = Axis(fig[1, 1]; title=title)
+    sankey!(
+        ax, connections;
+        nodelabels=nodelabels, nodecolor=nodecolors,
+        linkcolor=SankeyMakie.SourceColor(0.4), forceorder=forceorder
+    )
+    hidedecorations!(ax)
+    hidespines!(ax)
+    return fig
+end
+
+# One Sankey per dhw scenario, at a representative seed budget and RCP
+sankey_N_seed = 10_000_000
+sankey_n_locations = 200
+sankey_rcp = "45"
+for dhw in dhw_scenarios
+    df_sankey = scenario_probs[
+        (scenario_probs.N_seed .== sankey_N_seed) .&
+        (scenario_probs.n_locations .== sankey_n_locations) .&
+        (scenario_probs.dhw_scenario .== dhw) .&
+        (scenario_probs.rcp .== sankey_rcp),
+        :
+    ]
+    fig = plot_sankey(
+        df_sankey, option_names, number_changes;
+        title="Option pathways — N_seed $(sankey_N_seed), $(sankey_n_locations) locs, " *
+              "RCP $(sankey_rcp), dhw $(dhw)"
+    )
+    save(joinpath(pd_config["plot_output_path"], "sankey_dhw$(dhw).png"), fig)
+end
