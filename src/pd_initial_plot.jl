@@ -108,13 +108,12 @@ mcda_method = ADRIA.mcda_methods()[Int64(rs.inputs.guided[1])]
 # Outcome-perf caches over window [tstep, t_end]
 rel_cover = Array(rs.outcomes[:relative_cover][scenarios=idx_scens])
 fd_data = Array(rs.outcomes[:coral_evenness][scenarios=idx_scens])
-k_area = ADRIA.loc_k_area(rs)
 scen_to_idx = Dict(s => i for (i, s) in enumerate(idx_scens))
 t_end = min(tstep + pd_frequency - 1, max_time)
 # Per-option performance: one representative scenario per option (holding that option at
 # tstep), with per-location cumulative metrics (metric × location YAXArray).
 option_perf = ADRIA.analysis._compute_option_perf(
-    rel_cover, fd_data, k_area, idx_scens, scen_to_idx, decoded_ts, tstep, t_end
+    rel_cover, fd_data, idx_scens, scen_to_idx, decoded_ts, tstep, t_end
 )
 
 dms = ADRIA.readcubedata(
@@ -128,7 +127,6 @@ prob_matrix = zeros(n_opt, n_opt)
 cum_rel_tac_diff = zeros(n_opt, n_opt)
 cum_fd_diff = zeros(n_opt, n_opt)
 distance_port = zeros(n_opt, n_opt)
-dispersion = zeros(n_opt, n_opt)
 similarity = zeros(n_opt, n_opt)
 
 for i in idx_scens
@@ -158,9 +156,8 @@ for i in idx_scens
     u_src = src_df[src_df.UNIQUE_ID .∉ [common], :]
     u_dst = dst_df[dst_df.UNIQUE_ID .∉ [common], :]
 
-    # 3 spatial subcomponents
+    # 2 spatial subcomponents
     distance_port[r, c] = ADRIA.analysis.distance_port_score(u_dst, u_src, ports)
-    dispersion[r, c] = ADRIA.analysis.dispersion_score(dst_df, src_df)
     similarity[r, c] = ADRIA.analysis.option_similarity(u_dst, u_src)
 
     # 2 outcome subcomponents (mirror switching_probability internals: per-location
@@ -244,8 +241,7 @@ _heatmap_panel!(_panel_axis(fig, (1, 2), "Cumulative relative TAC diff"), cum_re
 _heatmap_panel!(_panel_axis(fig, (1, 3), "Cumulative functional diversity diff"), cum_fd_diff)
 # Row 2
 _heatmap_panel!(_panel_axis(fig, (2, 1), "Distance to port"; ylabel="From"), distance_port)
-_heatmap_panel!(_panel_axis(fig, (2, 2), "Dispersion"), dispersion)
-_heatmap_panel!(_panel_axis(fig, (2, 3), "Option similarity"), similarity)
+_heatmap_panel!(_panel_axis(fig, (2, 2), "Option similarity"), similarity)
 Colorbar(fig[1:2, 4]; limits=(0.0, 1.0))
 save(joinpath(pd_config["plot_output_path"], "pd_figures", "option_scores_matrix.png"), fig)
 
@@ -264,7 +260,6 @@ ax = Axis(
 scatterlines!(ax, 1:n_opt, vec(mean(cum_rel_tac_diff; dims=1)); label="Cum. rel. TAC diff")
 scatterlines!(ax, 1:n_opt, vec(mean(cum_fd_diff; dims=1)); label="Cum. FD diff")
 scatterlines!(ax, 1:n_opt, vec(mean(distance_port; dims=1)); label="Distance to port")
-scatterlines!(ax, 1:n_opt, vec(mean(dispersion; dims=1)); label="Dispersion")
 scatterlines!(ax, 1:n_opt, vec(mean(similarity; dims=1)); label="Option similarity")
 scatterlines!(
     ax, 1:n_opt, vec(mean(prob_matrix; dims=1)); color=:black, label="Switching prob"
