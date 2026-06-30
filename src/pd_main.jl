@@ -434,3 +434,45 @@ for dhw in dhw_scenarios
     )
     save(joinpath(pd_config["plot_output_path"], "sankey_dhw$(dhw).png"), fig)
 end
+
+# ----------------------------------------------------------
+# Boxplots of scenario probability distributions per starting option
+# One row per (N_seed, RCP) configuration, all at the same DHW scenario. Each box
+# aggregates the probabilities of every scenario that shares a starting option.
+
+boxplot_dhw = 5  # change to inspect a different DHW scenario
+boxplot_configs = [
+    (N_seed=10_000_000, n_locations=200, rcp=45),
+    (N_seed=10_000_000, n_locations=200, rcp=70),
+    (N_seed=1_000_000, n_locations=200, rcp=45)
+]
+
+# Starting option of a scenario = the option active at the first decision point
+starting_option(option_ts) = ADRIA.analysis.decode_option_ts(
+    option_ts, seed_year_start, seed_years, pd_frequency, max_time
+)[seed_year_start]
+
+n_opt = length(option_names)
+opt_idx = Dict(o => i for (i, o) in enumerate(option_names))
+palette = Makie.current_default_theme().palette.color[]
+
+fig = Figure(; size=(800, 230 * length(boxplot_configs)))
+for (row, cfg) in enumerate(boxplot_configs)
+    df = scenario_probs[
+        (scenario_probs.N_seed .== cfg.N_seed) .&
+        (scenario_probs.n_locations .== cfg.n_locations) .&
+        (scenario_probs.dhw_scenario .== boxplot_dhw) .&
+        (scenario_probs.rcp .== cfg.rcp),
+        :
+    ]
+    cats = [opt_idx[starting_option(ts)] for ts in df.option_ts]
+    colors = [palette[c] for c in cats]
+    ax = Axis(
+        fig[row, 1];
+        title="N_seed $(cfg.N_seed), $(cfg.n_locations) locs, RCP $(cfg.rcp), dhw $(boxplot_dhw)",
+        yticks=(1:n_opt, string.(option_names)),
+        xlabel=(row == length(boxplot_configs) ? "Switching probability" : "")
+    )
+    boxplot!(ax, cats, df.probability; orientation=:horizontal, color=colors)
+end
+save(joinpath(pd_config["plot_output_path"], "probability_boxplots.png"), fig)
