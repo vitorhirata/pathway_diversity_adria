@@ -416,23 +416,23 @@ function plot_sankey(df, option_names, number_changes; title="")
 end
 
 # One Sankey per dhw scenario, at a representative seed budget and RCP
-sankey_N_seed = 10_000_000
-sankey_n_locations = 200
-sankey_rcp = "45"
+_sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(c)e$e")
+sankey_N_seed = 1e6
+sankey_rcp = 45
+
 for dhw in dhw_scenarios
     df_sankey = scenario_probs[
         (scenario_probs.N_seed .== sankey_N_seed) .&
-        (scenario_probs.n_locations .== sankey_n_locations) .&
         (scenario_probs.dhw_scenario .== dhw) .&
         (scenario_probs.rcp .== sankey_rcp),
         :
     ]
     fig = plot_sankey(
         df_sankey, option_names, number_changes;
-        title="Option pathways — N_seed $(sankey_N_seed), $(sankey_n_locations) locs, " *
+        title="Option pathways — N_seed $(_sci(sankey_N_seed)), " *
               "RCP $(sankey_rcp), dhw $(dhw)"
     )
-    save(joinpath(pd_config["plot_output_path"], "sankey_dhw$(dhw).png"), fig)
+    save(joinpath(pd_config["plot_output_path"], "sankey_dhw$(dhw)_rcp$(sankey_rcp)_seed$(_sci(sankey_N_seed)).png"), fig)
 end
 
 # ----------------------------------------------------------
@@ -446,6 +446,8 @@ boxplot_configs = [
     (N_seed=10_000_000, n_locations=200, rcp=70),
     (N_seed=1_000_000, n_locations=200, rcp=45)
 ]
+_sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(c)e$e")
+
 
 # Starting option of a scenario = the option active at the first decision point
 starting_option(option_ts) = ADRIA.analysis.decode_option_ts(
@@ -469,7 +471,7 @@ for (row, cfg) in enumerate(boxplot_configs)
     colors = [palette[c] for c in cats]
     ax = Axis(
         fig[row, 1];
-        title="N_seed $(cfg.N_seed), $(cfg.n_locations) locs, RCP $(cfg.rcp), dhw $(boxplot_dhw)",
+        title="N_seed $(_sci(cfg.N_seed)), $(cfg.n_locations) locs, RCP $(cfg.rcp), dhw $(boxplot_dhw)",
         yticks=(1:n_opt, string.(option_names)),
         xlabel=(row == length(boxplot_configs) ? "Switching probability" : "")
     )
