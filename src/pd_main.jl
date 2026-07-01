@@ -361,7 +361,16 @@ max_time = size(rs.seed_log, :timesteps)
 # Timesteps of the decision points within the seeding window
 decision_steps = [seed_year_start + (k - 1) * pd_frequency for k in 1:number_changes]
 
-function plot_sankey(df, option_names, number_changes; title="")
+_sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(c)e$e")
+
+# Starting option of a scenario = the option active at the first decision point
+starting_option(option_ts) = ADRIA.analysis.decode_option_ts(
+    option_ts, seed_year_start, seed_years, pd_frequency, max_time
+)[seed_year_start]
+
+# Draw a Sankey of option pathways into an existing axis `ax`. `df` should already be
+# filtered to the scenarios to include (e.g. a single starting option).
+function draw_sankey!(ax, df, option_names, number_changes)
     n_opt = length(option_names)
     opt_idx = Dict(o => i for (i, o) in enumerate(option_names))
     palette = Makie.current_default_theme().palette.color[]
@@ -403,8 +412,6 @@ function plot_sankey(df, option_names, number_changes; title="")
         push!(forceorder, remap[node(k, b)] => remap[node(k, a)])
     end
 
-    fig = Figure(; size=(1100, 650))
-    ax = Axis(fig[1, 1]; title=title)
     sankey!(
         ax, connections;
         nodelabels=nodelabels, nodecolor=nodecolors,
@@ -412,11 +419,11 @@ function plot_sankey(df, option_names, number_changes; title="")
     )
     hidedecorations!(ax)
     hidespines!(ax)
-    return fig
+    return ax
 end
 
-# One Sankey per dhw scenario, at a representative seed budget and RCP
-_sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(c)e$e")
+# One file per dhw scenario, at a representative seed budget and RCP. Each file stacks
+# 5 isolated Sankeys (one per starting option) as rows so the pathways never overlap.
 sankey_N_seed = 1e6
 sankey_rcp = 45
 
@@ -427,12 +434,29 @@ for dhw in dhw_scenarios
         (scenario_probs.rcp .== sankey_rcp),
         :
     ]
-    fig = plot_sankey(
-        df_sankey, option_names, number_changes;
-        title="Option pathways — N_seed $(_sci(sankey_N_seed)), " *
-              "RCP $(sankey_rcp), dhw $(dhw)"
+    fig = Figure(; size=(1100, 300 * n_options))
+    Label(
+        fig[0, 1],
+        "Option pathways — N_seed $(_sci(sankey_N_seed)), RCP $(sankey_rcp), dhw $(dhw)";
+        fontsize=18, font=:bold
     )
-    save(joinpath(pd_config["plot_output_path"], "sankey_dhw$(dhw)_rcp$(sankey_rcp)_seed$(_sci(sankey_N_seed)).png"), fig)
+    for (i, option) in enumerate(option_names)
+        df_opt = df_sankey[[starting_option(ts) == option for ts in df_sankey.option_ts], :]
+        ax = Axis(fig[i, 1]; title="Start: $(option)", titlealign=:left)
+        if isempty(df_opt)
+            hidedecorations!(ax)
+            hidespines!(ax)
+            continue
+        end
+        draw_sankey!(ax, df_opt, option_names, number_changes)
+    end
+    save(
+        joinpath(
+            pd_config["plot_output_path"],
+            "sankey_dhw$(dhw)_rcp$(sankey_rcp)_seed$(_sci(sankey_N_seed)).png"
+        ),
+        fig
+    )
 end
 
 # ----------------------------------------------------------
@@ -446,13 +470,6 @@ boxplot_configs = [
     (N_seed=10_000_000, n_locations=200, rcp=70),
     (N_seed=1_000_000, n_locations=200, rcp=45)
 ]
-_sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(c)e$e")
-
-
-# Starting option of a scenario = the option active at the first decision point
-starting_option(option_ts) = ADRIA.analysis.decode_option_ts(
-    option_ts, seed_year_start, seed_years, pd_frequency, max_time
-)[seed_year_start]
 
 n_opt = length(option_names)
 opt_idx = Dict(o => i for (i, o) in enumerate(option_names))
