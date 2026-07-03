@@ -128,15 +128,20 @@ Select bottom and top `tail_fraction` of reefs by delta (opt − cf), then compu
 Returns (bottom_ratio, top_ratio).
 """
 function delta_tail_ratio(
-    opt::AbstractVector, cf::AbstractVector; tail_fraction::Float64=0.05
+    opt::AbstractVector, cf::AbstractVector; tail_fraction::Float64=0.05, norm::Float64 = 0.0
 )
     delta = opt .- cf
     k = max(1, floor(Int, tail_fraction * length(delta)))
     order = sortperm(delta)
     bot = order[1:k]
     top = order[(end - k + 1):end]
-    bot_ratio = (mean(opt[bot]) - mean(cf[bot])) / mean(cf[bot])
-    top_ratio = (mean(opt[top]) - mean(cf[top])) / mean(cf[top])
+
+    if iszero(norm)
+        norm = mean(cf)
+    end
+
+    bot_ratio = mean(delta[bot]) / norm
+    top_ratio = mean(delta[top]) / norm
     return bot_ratio, top_ratio
 end
 
@@ -208,9 +213,12 @@ for (rcp_i, rcp) in enumerate(rcps)
             results_per_reef[:, o, d, 3] = cum_fd.data[:, s] .- cum_fd.data[:, cf_s]
 
             # Median ratio for bottom/top 10% reefs by delta
-            results_aggreg_reef[o, d, 1], results_aggreg_reef[o, d, 2] = delta_tail_ratio(opt_nyrs, cf_nyrs; tail_fraction) ./ 5
-            results_aggreg_reef[o, d, 3], results_aggreg_reef[o, d, 4] = delta_tail_ratio(opt_tac,  cf_tac;  tail_fraction)
-            results_aggreg_reef[o, d, 5], results_aggreg_reef[o, d, 6] = delta_tail_ratio(opt_fd,   cf_fd;   tail_fraction)
+            results_aggreg_reef[o, d, 1], results_aggreg_reef[o, d, 2] =
+                delta_tail_ratio(opt_nyrs, cf_nyrs; tail_fraction=tail_fraction, norm=float(seed_years))
+            results_aggreg_reef[o, d, 3], results_aggreg_reef[o, d, 4] =
+                delta_tail_ratio(opt_tac, cf_tac; tail_fraction=tail_fraction)
+            results_aggreg_reef[o, d, 5], results_aggreg_reef[o, d, 6] =
+                delta_tail_ratio(opt_fd, cf_fd; tail_fraction=tail_fraction)
         end
     end
 

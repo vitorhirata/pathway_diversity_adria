@@ -102,15 +102,20 @@ Select bottom and top `tail_fraction` of reefs by delta (opt − cf), then compu
 Returns (bottom_ratio, top_ratio).
 """
 function delta_tail_ratio(
-    opt::AbstractVector, cf::AbstractVector; tail_fraction::Float64=0.05
+    opt::AbstractVector, cf::AbstractVector; tail_fraction::Float64=0.05, norm::Float64 = 0.0
 )
     delta = opt .- cf
     k = max(1, floor(Int, tail_fraction * length(delta)))
     order = sortperm(delta)
     bot = order[1:k]
     top = order[(end - k + 1):end]
-    bot_ratio = (mean(opt[bot]) - mean(cf[bot])) / mean(cf[bot])
-    top_ratio = (mean(opt[top]) - mean(cf[top])) / mean(cf[top])
+
+    if iszero(norm)
+        norm = mean(cf)
+    end
+
+    bot_ratio = mean(delta[bot]) / norm
+    top_ratio = mean(delta[top]) / norm
     return bot_ratio, top_ratio
 end
 
@@ -238,9 +243,9 @@ for (o_i, option) in enumerate(option_names)
     # per-pathway CVaR ratios: rows = pathways, cols = 6 metric variants
     ratios = Array{Float64}(undef, length(idxs), 6)
     for (p, s) in enumerate(idxs)
-        b1, t1 = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction)
-        b2, t2 = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction)
-        b3, t3 = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction)
+        b1, t1 = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction=tail_fraction, norm=seed_years)
+        b2, t2 = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction=tail_fraction)
+        b3, t3 = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction=tail_fraction)
         ratios[p, :] = [b1, t1, b2, t2, b3, t3]
     end
 
