@@ -102,7 +102,7 @@ Select bottom and top `tail_fraction` of reefs by delta (opt − cf), then compu
 Returns (bottom_ratio, top_ratio).
 """
 function delta_tail_ratio(
-    opt::AbstractVector, cf::AbstractVector; tail_fraction::Float64=0.05, norm::Float64 = 0.0
+    opt::AbstractVector, cf::AbstractVector; tail_fraction::Float64=0.05, norm::Real = 0.0
 )
     delta = opt .- cf
     k = max(1, floor(Int, tail_fraction * length(delta)))
@@ -294,3 +294,162 @@ save(
     fig; px_per_unit=2
 )
 @info "Saved robustness_pathways_rcp$(sel_rcp)_dhw$(sel_dhw).png"
+
+# ── Probability-weighted tail statistics per starting option ──────────────────
+#
+#   Weight the per-pathway scalars by pathway adoption probability and
+#     report P10 / Median / Mean / P90 of the weighted distribution, top and bottom kept
+#     separate. Done per starting option.
+
+"""
+    weighted_quantile(values, weights, q)
+
+Step / inverse-CDF weighted quantile (no interpolation): smallest value whose cumulative
+weight (values sorted ascending) reaches `q`.
+"""
+function weighted_quantile(values::AbstractVector, weights::AbstractVector, q::Real)
+    order = sortperm(values)
+    vs = values[order]
+    ws = weights[order]
+    F = cumsum(ws)
+    i = findfirst(f -> f >= q - 1e-9, F)
+    return vs[i]
+end
+
+"""
+    pathway_tail_stats(M, w) -> (p10, median, mean, p90)
+
+Weighted stats of a per-pathway scalar vector `M` with weights `w`. `mean` uses the unsorted
+vectors directly; the quantiles use `weighted_quantile`.
+"""
+function pathway_tail_stats(M::AbstractVector, w::AbstractVector)
+    return (
+        p10=weighted_quantile(M, w, 0.10),
+        median=weighted_quantile(M, w, 0.50),
+        mean=sum(w .* M),
+        p90=weighted_quantile(M, w, 0.90)
+    )
+end
+
+"""
+    aggregate_metric(intervention, counterfactual, reference, probs; tail_frac=0.05)
+
+`intervention` is `nreefs × npathways`, `counterfactual` is length `nreefs`, `probs` is length
+`npathways`. Returns `(top, bottom, n_eff)` where `top`/`bottom` are `pathway_tail_stats`
+named tuples for the best/worst reef tails and `n_eff` is the Kish effective sample size.
+"""
+function aggregate_metric(
+    intervention::AbstractMatrix, counterfactual::AbstractVector, reference::Real,
+    probs::AbstractVector; tail_frac::Float64=0.05
+)
+    nreefs, npaths = size(intervention)
+    @assert nreefs == length(counterfactual)
+    @assert npaths == length(probs)
+    @assert all(probs .>= 0)
+    @assert isapprox(sum(probs), 1.0; atol=1e-5)
+
+    Mplus = Vector{Float64}(undef, npaths)   # top tail (best reefs)
+    Mminus = Vector{Float64}(undef, npaths)  # bottom tail (worst reefs)
+    for p in 1:npaths
+        Mminus[p], Mplus[p] = delta_tail_ratio(
+            intervention[:, p], counterfactual; tail_fraction=tail_frac, norm=reference
+        )
+    end
+
+    return (
+        top=pathway_tail_stats(Mplus, probs),
+        bottom=pathway_tail_stats(Mminus, probs),
+        n_eff=1 / sum(probs .^ 2)
+    )
+end
+
+# Pathway adoption probabilities for the representative combo, keyed by option_ts
+prob_csv_path = ""
+
+prob_df = CSV.read(prob_csv_path, DataFrame)
+prob_df = prob_df[
+    (prob_df.N_seed .== round(Int, sel_N_seed)) .&
+    (prob_df.dhw_scenario .== sel_dhw) .&
+    (prob_df.n_locations .== sel_n_locations) .&
+    (prob_df.rcp .== sel_rcp), :]
+prob_map = Dict(row.option_ts => row.probability for row in eachrow(prob_df))
+
+# (metric name, intervention matrix, counterfactual column, reference constant)
+weighted_metrics = [
+    ("Years >20% coral cover", nyrs, cf_metric_full[1], float(seed_years)),
+    ("Cumulative cover", ctac, cf_metric_full[2], mean(cf_metric_full[2])),
+    ("Cumulative evenness", cfd, cf_metric_full[3], mean(cf_metric_full[3]))
+]
+
+# Tidy per (starting option × metric × tail) table. metric_idx 1–6 matches `metric_labels`
+# ordering (worst/best interleaved per metric), so this feeds a Figure-B-style plot directly.
+weighted_tail_stats = DataFrame(;
+    start_option=String[], metric=String[], metric_idx=Int[], tail=String[],
+    p10=Float64[], median=Float64[], mean=Float64[], p90=Float64[], n_eff=Float64[]
+)
+
+for option in option_names
+    idxs = option_pathways[option]
+    isempty(idxs) && continue
+    probs = [prob_map[rs.inputs.option_ts[s]] for s in idxs]
+
+    for (m, (name, mat, cf, ref)) in enumerate(weighted_metrics)
+        res = aggregate_metric(mat[:, idxs], cf, ref, probs; tail_frac=tail_fraction)
+        for (tail_name, stats, metric_idx) in (
+            ("worst", res.bottom, 2 * (m - 1) + 1), ("best", res.top, 2 * m)
+        )
+            push!(weighted_tail_stats, (
+                string(option), name, metric_idx, tail_name,
+                stats.p10, stats.median, stats.mean, stats.p90, res.n_eff
+            ))
+        end
+    end
+end
+
+@info "Computed weighted_tail_stats" nrow(weighted_tail_stats)
+
+# ── Figure C — probability-weighted tail stats per starting option ────────────
+# Same layout as Figure B, but points come from the weighted distribution: point = median
+# (or mean), whiskers span P10–P90. Set `point_stat` to :median or :mean.
+
+point_stat = :median  # :median or :mean
+
+fig = Figure(size=(1100, 480))
+ax = Axis(fig[1, 1];
+    xticks=(1:6, metric_labels),
+    xticklabelsize=11,
+    ylabel="Prob.-weighted performance against \ncounterfactual (no interv.)",
+    title="Weighted pathway robustness ($(point_stat), P10–P90) — RCP $(sel_rcp), dhw $(sel_dhw)"
+)
+hlines!(ax, [0]; color=:black, linewidth=2)
+vlines!(ax, [2.5, 4.5]; color=:gray70, linewidth=1, linestyle=:dash)
+
+n_dodge = n_options
+dodge_width = 0.6
+for (o_i, option) in enumerate(option_names)
+    df = weighted_tail_stats[weighted_tail_stats.start_option .== string(option), :]
+    isempty(df) && continue
+    sort!(df, :metric_idx)
+
+    color = option_colors[o_i]
+    offset = (o_i - (n_dodge + 1) / 2) * (dodge_width / n_dodge)
+    x = df.metric_idx .+ offset
+    pt = df[!, point_stat]
+    scatter!(ax, x, pt; color, markersize=10)
+    errorbars!(ax, x, pt, pt .- df.p10, df.p90 .- pt; color, whiskerwidth=6)
+end
+
+Legend(fig[1, 2],
+    [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
+    option_labels;
+    title="Starting option", framevisible=false
+)
+
+save(
+    joinpath(
+        pd_config["plot_output_path"],
+        "robustness_pathways_weighted_$(point_stat)_rcp$(sel_rcp)_dhw$(sel_dhw).png"
+    ),
+    fig; px_per_unit=2
+)
+@info "Saved robustness_pathways_weighted_$(point_stat)_rcp$(sel_rcp)_dhw$(sel_dhw).png"
