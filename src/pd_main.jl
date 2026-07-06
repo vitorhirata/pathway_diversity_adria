@@ -495,3 +495,113 @@ for (row, cfg) in enumerate(boxplot_configs)
     boxplot!(ax, cats, df.probability; orientation=:horizontal, color=colors)
 end
 save(joinpath(pd_config["plot_output_path"], "probability_boxplots.png"), fig)
+
+# ----------------------------------------------------------
+# Lock-in score across decision steps
+# Diagnoses how likely a decision is to *keep* the current option (e.g. past
+# :heat_stress → new :heat_stress) rather than switch, as the seeding window
+# progresses. For each transition k (between consecutive decision points), within each
+# starting-option distribution (which sums to 1) we sum the probability mass of pathways
+# that keep the same option, then average over starting options. Median over dhw with
+# min/max whiskers, one colored line per (N_seed, RCP) configuration.
+
+# Configurable parameter sets. Each entry is one colored line; n_locations fixed at 200.
+lockin_configs = [
+    (N_seed=1_000_000,   n_locations=200, rcp=45),
+    (N_seed=1_000_000,   n_locations=200, rcp=70),
+    (N_seed=10_000_000,  n_locations=200, rcp=45),
+    (N_seed=10_000_000,  n_locations=200, rcp=70),
+    (N_seed=100_000_000, n_locations=200, rcp=45)
+]
+
+# Long table: one row per (config, dhw, decision_step)
+lockin = DataFrame(;
+    N_seed=Int64[], n_locations=Int64[], rcp=Int64[],
+    dhw_scenario=Int64[], decision_step=Int64[], keep_prob=Float64[]
+)
+
+for cfg in lockin_configs
+    for dhw in dhw_scenarios
+        df = scenario_probs[
+            (scenario_probs.N_seed .== cfg.N_seed) .&
+            (scenario_probs.n_locations .== cfg.n_locations) .&
+            (scenario_probs.dhw_scenario .== dhw) .&
+            (scenario_probs.rcp .== cfg.rcp),
+            :
+        ]
+        isempty(df) && continue
+
+        # Decode each scenario's option path at the decision points
+        paths = [
+            ADRIA.analysis.decode_option_ts(
+                ts, seed_year_start, seed_years, pd_frequency, max_time
+            )[decision_steps]
+            for ts in df.option_ts
+        ]
+
+        # Per transition k, average over starting options of the diagonal (keep) mass
+        for k in 1:(number_changes - 1)
+            keep_per_option = Float64[]
+            for option in option_names
+                mask = [p[1] == option for p in paths]
+                any(mask) || continue
+                push!(keep_per_option,
+                    sum(df.probability[mask][[p[k] == p[k + 1] for p in paths[mask]]]))
+            end
+            isempty(keep_per_option) && continue
+            push!(lockin, (
+                cfg.N_seed, cfg.n_locations, cfg.rcp, dhw, k, mean(keep_per_option)
+            ))
+        end
+    end
+end
+
+CSV.write(joinpath(pd_config["plot_output_path"], "lockin_scores.csv"), lockin)
+
+# Aggregate over dhw: median with min/max whiskers
+lockin_agg = combine(
+    groupby(lockin, [:N_seed, :n_locations, :rcp, :decision_step])
+) do subdf
+    (
+        median_keep=median(subdf.keep_prob),
+        min_keep=minimum(subdf.keep_prob),
+        max_keep=maximum(subdf.keep_prob)
+    )
+end
+
+# Plot: x = decision step, y = keep probability, one colored line per config
+fig = Figure(; size=(800, 400))
+ax = Axis(fig[1, 1];
+    xlabel="Decision step",
+    ylabel="P(keep current option)",
+    xticks=(1:(number_changes - 1), string.(1:(number_changes - 1)))
+)
+palette = Makie.current_default_theme().palette.color[]
+n_cfg = length(lockin_configs)
+# Small per-series x-offset so overlapping whiskers stay legible
+dodge_offsets = [(i - (n_cfg + 1) / 2) * 0.04 for i in 1:n_cfg]
+
+for (i, cfg) in enumerate(lockin_configs)
+    sub = sort(
+        lockin_agg[
+            (lockin_agg.N_seed .== cfg.N_seed) .&
+            (lockin_agg.n_locations .== cfg.n_locations) .&
+            (lockin_agg.rcp .== cfg.rcp),
+            :
+        ],
+        :decision_step
+    )
+    isempty(sub) && continue
+    xs = sub.decision_step .+ dodge_offsets[i]
+    scatterlines!(ax, xs, sub.median_keep; color=palette[i])
+    errorbars!(
+        ax, xs, sub.median_keep,
+        sub.median_keep .- sub.min_keep, sub.max_keep .- sub.median_keep;
+        color=palette[i], whiskerwidth=6
+    )
+end
+
+elements = [LineElement(; color=palette[i]) for i in 1:n_cfg]
+labels = ["$(_sci(cfg.N_seed)) · RCP$(cfg.rcp)" for cfg in lockin_configs]
+Legend(fig[1, 2], elements, labels, "Parameter set")
+save(joinpath(pd_config["plot_output_path"], "lockin_scores.png"), fig)
