@@ -10,13 +10,13 @@ Main parameters varied:
 include("src/common.jl")
 using GraphMakie, CairoMakie, SankeyMakie
 
-rcps = ["26", "45", "70"]
+rcps = ["45", "70"]
 seed_years = 20
 dom = ADRIA.load_domain(
     pd_config["domain_path"], rcps[1];
     calib_params_fn=pd_config["coral_param_path"],
     # timeframe: seed_years + 2 (start seeding), 5 (extra years)
-    timeframe=(2022, 2022 + seed_years + 2 + 5)
+    timeframe=(2027, 2027 + seed_years + 2 + 5)
 )
 ms = ADRIA.model_spec(dom)
 
@@ -49,9 +49,8 @@ ADRIA.fix_factor!(dom;
     wave_scenario=1
 )
 
-dhw_scenarios = [5, 7, 11]
+dhw_scenarios = [2, 7, 10]
 n_seed_locations = [
-    [1e2, 15],
     [1e6, 200],
     [1e7, 200],
     [1e8, 200]
