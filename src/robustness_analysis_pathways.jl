@@ -148,16 +148,6 @@ end
 nyrs, ctac, cfd = reef_metrics(rs)
 nyrs_cf, ctac_cf, cfd_cf = reef_metrics(rs_cf)
 
-# Reefs seeded in at least one intervention pathway
-seed_start = Int(rs.inputs.seed_year_start[1])
-n_seed_years = Int(rs.inputs.seed_years[1])
-seed_ts = seed_start:(seed_start + n_seed_years - 1)
-seed_per_reef_per_ts_scen = dropdims(
-    sum(rs.seed_log[timesteps=seed_ts]; dims=:coral_id); dims=:coral_id
-)
-never_seeded = vec(all(seed_per_reef_per_ts_scen.data .== 0; dims=(1, 3)))
-active_mask = .!never_seeded
-
 # ── Group pathways by starting option ─────────────────────────────────────────
 
 max_time = size(rs.seed_log, :timesteps)
@@ -211,10 +201,10 @@ for (m_i, title) in enumerate(metric_titles)
     for (o_i, option) in enumerate(option_names)
         idxs = option_pathways[option]
         isempty(idxs) && continue
-        # Pool per-reef deltas over active reefs × all pathways in this group
+        # Pool per-reef deltas over all reefs × all pathways in this group
         y = Float64[]
         for s in idxs
-            append!(y, opt_metric_mats[m_i][active_mask, s] .- cf_metric_full[m_i][active_mask])
+            append!(y, opt_metric_mats[m_i][:, s] .- cf_metric_full[m_i])
         end
         boxplot!(ax, fill(o_i, length(y)), y; color=option_colors[o_i])
     end

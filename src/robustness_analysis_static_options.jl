@@ -172,19 +172,8 @@ m_tac = ADRIA.readcubedata(ADRIA.metrics.total_absolute_cover(rs)) .* 1e-6  # YA
 fd_arr = ADRIA.readcubedata(ADRIA.metrics.coral_evenness(rs))               # YAXArray (timesteps, locations, scenarios)
 loc_hab_area_km2 = rs.loc_area .* rs.loc_max_coral_cover .* 1e-6
 
-# Reefs seeded in at least one intervention scenario (across all options, DHW, RCPs).
-# Defined over the full seeding window, so independent of the measurement horizon.
+# Seed window start (measurement horizons are anchored here).
 seed_start = Int(rs.inputs.seed_year_start[1])
-n_seed_years = Int(rs.inputs.seed_years[1])
-seed_ts = seed_start:(seed_start + n_seed_years - 1)
-cf_idxs = n_scenarios_per_dhw:n_scenarios_per_dhw:n_scens_rs  # every 7th row is a counterfactual
-intervention_idxs = setdiff(1:n_scens_rs, cf_idxs)
-seed_per_reef_per_ts_scen = dropdims(
-    sum(rs.seed_log[timesteps=seed_ts, scenarios=intervention_idxs]; dims=:coral_id);
-    dims=:coral_id
-)
-never_seeded = vec(all(seed_per_reef_per_ts_scen.data .== 0; dims=(1, 3)))
-active_mask = .!never_seeded
 
 # ── Visualisation styling (shared across horizons) ────────────────────────────
 
@@ -200,8 +189,6 @@ aggreg_metric_labels = [
     "Cum. evenness\n(worst)", "Cum. evenness\n(best)", "Cum. evenness\n(net)"
 ]
 boxplot_metric_labels = ["Years >20% coral cover", "Cumulative cover", "Cumulative evenness"]
-boxplot_ylims = [(-3.0, 3.0), (-0.1, 1.7), (-11.0, 11.0)]
-boxplot_yticks = [-3:1.0:3, -0.1:0.6:1.7, -11:5.5:11]
 option_labels = string.(scenario_names)
 
 # ── CVaR aggregation + plotting (per N_seed, RCP, horizon) ────────────────────
@@ -215,19 +202,19 @@ aggreg_metric_syms = [
 base_metric_syms = [:nyrs, :tac, :fd]
 
 """
-    cvar_aggregation(rs, m_tac, fd_arr, loc_hab_area_km2, active_mask,
+    cvar_aggregation(rs, m_tac, fd_arr, loc_hab_area_km2,
                      N_seed_total, min_iv, rcp, horizon; tail_fraction=0.03)
 
 Filter the static-option scenarios for a given `N_seed_total`, `min_iv` (min_iv_locations),
 `rcp` and measurement `horizon` (years from seed-start), window the metrics, and
 CVaR-aggregate each option vs its counterfactual. Returns `(aggreg, per_reef)`:
 - `aggreg`   : YAXArray `(option=6, dhw_scenario=3, metric=9)` — (worst, best, net) tail ratios
-  vs counterfactual (over active reefs) for n_yrs_above / cum cover / cum evenness.
+  vs counterfactual (over all reefs) for n_yrs_above / cum cover / cum evenness.
 - `per_reef` : YAXArray `(option=6, dhw_scenario=3, metric=3, location=n_locs)` — absolute
   Δ vs counterfactual per location, for the 3 base metrics.
 """
 function cvar_aggregation(
-    rs, m_tac, fd_arr, loc_hab_area_km2, active_mask,
+    rs, m_tac, fd_arr, loc_hab_area_km2,
     N_seed_total, min_iv, rcp, horizon; tail_fraction=0.03
 )
     @assert seed_start + horizon - 1 <= size(m_tac, :timesteps) "Run too short for horizon $(horizon)."
@@ -262,36 +249,33 @@ function cvar_aggregation(
         # Counterfactual (option = -1) carries no seed budget, so match on param_mask only.
         cf_s = findfirst(param_mask .& dhw_mask .& (rs.inputs.option .== -1))
 
-        cf_nyrs_full = win_nyrs(cf_s)
-        cf_tac_full  = win_tac(cf_s)
-        cf_fd_full   = win_fd(cf_s)
-        cf_nyrs = cf_nyrs_full[active_mask]
-        cf_tac  = cf_tac_full[active_mask]
-        cf_fd   = cf_fd_full[active_mask]
+        cf_nyrs = win_nyrs(cf_s)
+        cf_tac  = win_tac(cf_s)
+        cf_fd   = win_fd(cf_s)
 
         for (o, _) in enumerate(scenario_names)
             # option id: 1:5 for guided options, 0 for the unguided (6th) column.
             opt_id = o < n_options ? o : 0
             s = findfirst(seeded_mask .& dhw_mask .& (rs.inputs.option .== opt_id))
-            opt_nyrs_full = win_nyrs(s)
-            opt_tac_full  = win_tac(s)
-            opt_fd_full   = win_fd(s)
+            opt_nyrs = win_nyrs(s)
+            opt_tac  = win_tac(s)
+            opt_fd   = win_fd(s)
 
             # Per-reef absolute deltas over all locations (boxplot)
-            per_reef[option=o, dhw_scenario=d, metric=ADRIA.At(:nyrs)] .= opt_nyrs_full .- cf_nyrs_full
-            per_reef[option=o, dhw_scenario=d, metric=ADRIA.At(:tac)]  .= opt_tac_full  .- cf_tac_full
-            per_reef[option=o, dhw_scenario=d, metric=ADRIA.At(:fd)]   .= opt_fd_full   .- cf_fd_full
+            per_reef[option=o, dhw_scenario=d, metric=ADRIA.At(:nyrs)] .= opt_nyrs .- cf_nyrs
+            per_reef[option=o, dhw_scenario=d, metric=ADRIA.At(:tac)]  .= opt_tac  .- cf_tac
+            per_reef[option=o, dhw_scenario=d, metric=ADRIA.At(:fd)]   .= opt_fd   .- cf_fd
 
-            # (worst, best, net) tail ratios vs counterfactual over active reefs. n_yrs uses
+            # (worst, best, net) tail ratios vs counterfactual over all reefs. n_yrs uses
             # horizon length as the zero-guard fallback (many cf reefs never exceed threshold).
             aggreg[option=o, dhw_scenario=d, metric=ADRIA.At([:nyrs_worst, :nyrs_best, :nyrs_net])] .= delta_tail_ratio(
-                opt_nyrs_full[active_mask], cf_nyrs; tail_fraction=tail_fraction, norm=float(horizon)
+                opt_nyrs, cf_nyrs; tail_fraction=tail_fraction, norm=float(horizon)
             )
             aggreg[option=o, dhw_scenario=d, metric=ADRIA.At([:tac_worst, :tac_best, :tac_net])] .= delta_tail_ratio(
-                opt_tac_full[active_mask], cf_tac; tail_fraction=tail_fraction
+                opt_tac, cf_tac; tail_fraction=tail_fraction
             )
             aggreg[option=o, dhw_scenario=d, metric=ADRIA.At([:fd_worst, :fd_best, :fd_net])] .= delta_tail_ratio(
-                opt_fd_full[active_mask], cf_fd; tail_fraction=tail_fraction
+                opt_fd, cf_fd; tail_fraction=tail_fraction
             )
         end
     end
@@ -351,12 +335,12 @@ function plot_robustness(aggreg, N_seed_total, min_iv, rcp, horizon)
 end
 
 """
-    plot_boxplot(per_reef, active_mask, N_seed_total, min_iv, rcp, horizon)
+    plot_boxplot(per_reef, N_seed_total, min_iv, rcp, horizon)
 
-Per-reef boxplot (3 panels) from `cvar_aggregation`'s `per_reef` YAXArray, pooling active
+Per-reef boxplot (3 panels) from `cvar_aggregation`'s `per_reef` YAXArray, pooling all
 reefs across DHW scenarios.
 """
-function plot_boxplot(per_reef, active_mask, N_seed_total, min_iv, rcp, horizon)
+function plot_boxplot(per_reef, N_seed_total, min_iv, rcp, horizon)
     nseed_label = "1e$(round(Int, log10(N_seed_total)))"
 
     fig = Figure(size=(1200, 450))
@@ -364,16 +348,14 @@ function plot_boxplot(per_reef, active_mask, N_seed_total, min_iv, rcp, horizon)
         ax = Axis(fig[1, m_i];
             xticks=(1:n_options, option_labels),
             xticklabelrotation=π / 4,
-            yticks=boxplot_yticks[m_i],
-            limits=(nothing, nothing, boxplot_ylims[m_i]...),
             ylabel=m_i == 1 ? "Relative difference vs counterfactual" : "",
             title="$(metric)"
         )
         hlines!(ax, [0]; color=:black, linewidth=2)
 
         for (o_i, _) in enumerate(scenario_names)
-            # pool active reefs × all dhw_scenarios for this option
-            y = vec(per_reef.data[o_i, :, m_i, active_mask])
+            # pool all reefs × all dhw_scenarios for this option
+            y = vec(per_reef[option=o_i, metric=m_i])
             boxplot!(ax, fill(o_i, length(y)), y; color=option_colors[o_i])
         end
     end
@@ -413,12 +395,12 @@ summary_stats = ADRIA.DataCube(
 
 for (c_i, cfg) in enumerate(summary_configs)
     aggreg, per_reef = cvar_aggregation(
-        rs, m_tac, fd_arr, loc_hab_area_km2, active_mask,
+        rs, m_tac, fd_arr, loc_hab_area_km2,
         cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon; tail_fraction=tail_fraction
     )
 
     plot_robustness(aggreg, cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon)
-    plot_boxplot(per_reef, active_mask, cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon)
+    plot_boxplot(per_reef, cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon)
 
     for (m_i, m) in enumerate(net_syms)
         vals = vec(aggreg[metric=ADRIA.At(m)])  # over all option × dhw_scenario
