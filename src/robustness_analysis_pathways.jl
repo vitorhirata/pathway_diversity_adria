@@ -16,46 +16,13 @@ using GeoMakie, GraphMakie, CairoMakie
 
 # ── Constants ─────────────────────────────────────────────
 
-rcps = ["26", "45", "70"]
-dhw_scenarios = [5, 7, 11]
+# These must match the pd_main.jl run that produced `intervention_path` below.
 seed_years = 20
 pd_frequency::Int64 = 5
 seed_year_start = 2
 N_seed_weights = (
     N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0
 )
-
-# ── Domain setup (same fixed factors and timeframe as pd_main.jl) ─────────────
-
-dom = ADRIA.load_domain(
-    pd_config["domain_path"], rcps[1];
-    calib_params_fn=pd_config["coral_param_path"],
-    timeframe=(2022, 2022 + seed_years + 2 + 5)
-)
-fix_common_parameters!(dom)
-
-ADRIA.fix_factor!(dom;
-    seed_years=seed_years,
-    seeding_devices_per_m2=5,
-    a_adapt=5.0
-)
-
-# ── Build + run counterfactual ResultSet (one per dhw × rcp, N_seed = 0) ──────
-
-scens_cf = repeat(ADRIA.sample(dom, 2)[1:1, :], length(dhw_scenarios))
-for (i, dhw) in enumerate(dhw_scenarios)
-    scens_cf[i, :dhw_scenario] = dhw
-    scens_cf[i, :guided] = 0
-    scens_cf[i, :N_seed_TA] = 0
-    scens_cf[i, :N_seed_CA] = 0
-    scens_cf[i, :N_seed_CNA] = 0
-    scens_cf[i, :N_seed_SM] = 0
-    scens_cf[i, :N_seed_LM] = 0
-end
-
-rs_cf = ADRIA.run_scenarios(dom, scens_cf, rcps)
-
-# rs_cf = ADRIA.load_results()
 
 # ── Load intervention ResultSet (from a prior pd_main.jl run) ─────────────────
 
@@ -136,7 +103,6 @@ function reef_metrics(result_set; horizon::Int=horizon)
 end
 
 nyrs, ctac, cfd = reef_metrics(rs)
-nyrs_cf, ctac_cf, cfd_cf = reef_metrics(rs_cf)
 
 # ── Group pathways by starting option ─────────────────────────────────────────
 
@@ -147,8 +113,8 @@ starting_option(option_ts) = ADRIA.analysis.decode_option_ts(
 
 # Parameters to analyse
 sel_rcp = 45
-sel_dhw = 5
-sel_N_seed = 1e7
+sel_dhw = 7
+sel_N_seed = 1e6
 sel_n_locations = 200
 tail_fraction = 0.03
 
@@ -167,14 +133,20 @@ option_pathways = Dict(
     for option in option_names
 )
 
-# Matching counterfactual column (same dhw + rcp)
+# Matching counterfactual column within `rs` (same dhw + rcp). pd_main.jl writes one
+# no-seeding counterfactual per dhw_scenario; identify it as the row with zero total seeds.
+total_N_seed = rs.inputs.N_seed_TA .+ rs.inputs.N_seed_CA .+ rs.inputs.N_seed_CNA .+
+               rs.inputs.N_seed_SM .+ rs.inputs.N_seed_LM
 cf_idx = findfirst(
-    (rs_cf.inputs.dhw_scenario .== sel_dhw) .& (rs_cf.inputs.RCP .== sel_rcp)
+    (total_N_seed .== 0) .&
+    (rs.inputs.dhw_scenario .== sel_dhw) .&
+    (rs.inputs.RCP .== sel_rcp)
 )
+@assert !isnothing(cf_idx) "No counterfactual (zero total seeds) found in `rs` for dhw $(sel_dhw), RCP $(sel_rcp)."
 
 # Per-reef metric matrices (intervention) and matching counterfactual columns
 opt_metric_mats = (nyrs, ctac, cfd)
-cf_metric_full = (nyrs_cf[:, cf_idx], ctac_cf[:, cf_idx], cfd_cf[:, cf_idx])
+cf_metric_full = (nyrs[:, cf_idx], ctac[:, cf_idx], cfd[:, cf_idx])
 
 option_colors = Makie.wong_colors()[1:n_options]
 option_labels = string.(option_names)
