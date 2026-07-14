@@ -10,7 +10,7 @@ PAWN sensitivity analysis considering five main parameters:
 include("src/common.jl")
 using GeoMakie, GraphMakie, CairoMakie
 
-seed_years = 30
+seed_years = 20
 rcps = ["26", "45", "70"]
 dom = ADRIA.load_domain(
     pd_config["domain_path"], rcps[1];

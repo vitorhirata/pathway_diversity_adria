@@ -18,7 +18,7 @@ include("src/common.jl")
 using GeoMakie, GraphMakie, CairoMakie, NaturalEarth
 
 RCP = "45"
-seed_years = 30
+seed_years = 20
 dom = ADRIA.load_domain(pd_config["domain_path"], RCP;
     calib_params_fn=pd_config["coral_param_path"],
     # timeframe: seed_years + 2 (start seeding), 5 (extra years)

@@ -27,7 +27,7 @@ using GeoMakie, GraphMakie, CairoMakie
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-seed_years = 30
+seed_years = 20
 tail_fraction = 0.05
 rcps = ["26", "45", "70"]
 dhw_scenarios = [5, 7, 9, 11]

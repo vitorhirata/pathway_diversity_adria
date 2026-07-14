@@ -26,7 +26,7 @@ n_options = length(scenario_names)  # 6 (excludes counterfactual)
 
 dom = ADRIA.load_domain(pd_config["domain_path"], rcps[1];
     calib_params_fn=pd_config["coral_param_path"],
-    timeframe=(2022, 2022 + seed_years + 2 + 10)
+    timeframe=(2022, 2022 + seed_years + 2 + 5)
 )
 ms = ADRIA.model_spec(dom)
 
