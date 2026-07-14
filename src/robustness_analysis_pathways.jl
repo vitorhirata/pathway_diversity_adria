@@ -53,6 +53,8 @@ ADRIA.fix_factor!(dom;
     depth_offset=25.0,
     fogging=0.0,
     SRM=0.0,
+    mcb_duration=0,
+    mcb_albedo=0,
     N_mc_settlers=0,
     wave_scenario=1
 )

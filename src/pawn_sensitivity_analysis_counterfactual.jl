@@ -65,6 +65,8 @@ ADRIA.fix_factor!(dom;
     N_mc_settlers=0,           # No moving corals
     fogging=0.0,               # No fogging
     SRM=0.0,                   # No shadding
+    mcb_duration=0,            # No marine cloud brightening
+    mcb_albedo=0,
     # Seending intervention parameters
     seed_year_start=2,         # Start as soon as possible
     seed_years=seed_years,

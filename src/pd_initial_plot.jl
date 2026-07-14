@@ -55,6 +55,8 @@ ADRIA.fix_factor!(dom;
     #Other interventions (no fogging, shading or moving corals)
     fogging=0.0,
     SRM=0.0,
+    mcb_duration=0,
+    mcb_albedo=0,
     N_mc_settlers=0,
     #Seeding amounts
     N_seed_TA=N_seed * N_seed_weights.N_seed_TA,

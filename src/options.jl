@@ -48,6 +48,8 @@ ADRIA.fix_factor!(dom;
     N_mc_settlers=0,
     fogging=0.0,
     SRM=0.0,
+    mcb_duration=0,
+    mcb_albedo=0,
     # Seeding parameters
     seed_year_start=2,
     seed_years=seed_years,
