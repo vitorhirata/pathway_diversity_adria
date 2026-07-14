@@ -65,6 +65,23 @@ for param in params
     scen = ADRIA.sample_options(dom, pd_frequency)
     push!(scens, scen)
 end
+
+# Counterfactual (no seeding) — one scenario per dhw_scenario.
+cf_option_ts = ADRIA.analysis.encode_option_ts(ntuple(_ -> :nothing, seed_years ÷ pd_frequency))
+ADRIA.fix_factor!(dom;
+    N_seed_TA=0,
+    N_seed_CA=0,
+    N_seed_CNA=0,
+    N_seed_SM=0,
+    N_seed_LM=0
+)
+for dhw in dhw_scenarios
+    ADRIA.fix_factor!(dom; dhw_scenario=dhw)
+    scen = ADRIA.sample(dom, 2)[1:1, :]
+    scen.pd_frequency .= pd_frequency
+    scen.option_ts .= cf_option_ts
+    push!(scens, scen)
+end
 scens = vcat(scens...)
 
 # Run scenarios
