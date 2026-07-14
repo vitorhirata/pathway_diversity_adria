@@ -81,12 +81,6 @@ rs = ADRIA.load_results(intervention_path)
 
 # ── Representative analysis parameters (the "main parameters") ────────────────
 
-sel_rcp = 45
-sel_dhw = 5
-sel_N_seed = 1e7
-sel_n_locations = 200
-tail_fraction = 0.03
-
 option_names = ADRIA.analysis.option_seed_preference().option_name
 n_options = length(option_names)
 
@@ -121,26 +115,39 @@ end
 
 # ── Per-reef metrics (same code path for intervention and counterfactual) ─────
 
+# Measurement horizon (years from seed-start). Matches the static analysis' default horizon
+# so the two scripts integrate over the same window and stay directly comparable.
+horizon = seed_years
+
 """
-Compute the three per-reef metrics for a ResultSet.
-Returns (n_yrs_above, cum_tac, cum_fd), each a (n_locs, n_scenarios) matrix.
+Compute the three per-reef metrics for a ResultSet over a `horizon`-year window anchored at
+seed-start. Returns (n_yrs_above, cum_tac, cum_fd), each a (n_locs, n_scenarios) matrix.
+
+Metrics are materialised with `readcubedata` (keeps them as YAXArrays, dims preserved) and
+sliced by dimension name, matching `robustness_analysis_static_options.jl`.
 """
-function reef_metrics(result_set)
+function reef_metrics(result_set; horizon::Int=horizon)
     n_locs = size(result_set.seed_log, :locations)
     n_scens = nrow(result_set.inputs)
 
-    m_tac = Array(ADRIA.metrics.total_absolute_cover(result_set)) .* 1e-6
+    m_tac = ADRIA.readcubedata(ADRIA.metrics.total_absolute_cover(result_set)) .* 1e-6  # km²
+    fd_arr = ADRIA.readcubedata(ADRIA.metrics.coral_evenness(result_set))
     loc_hab_area_km2 = result_set.loc_area .* result_set.loc_max_coral_cover .* 1e-6
-    fd_data = ADRIA.metrics.coral_evenness(result_set)
+
+    seed_start = Int(result_set.inputs.seed_year_start[1])
+    @assert seed_start + horizon - 1 <= size(m_tac, :timesteps) "Run too short for horizon $(horizon)."
+    window = seed_start:(seed_start + horizon - 1)
 
     n_yrs_above = Array{Float64}(undef, n_locs, n_scens)
     for s in 1:n_scens, l in 1:n_locs
         thr = 0.20 * loc_hab_area_km2[l]
-        n_yrs_above[l, s] = Float64(count(m_tac[:, l, s] .>= thr))
+        n_yrs_above[l, s] = Float64(
+            count(m_tac[timesteps=window, locations=l, scenarios=s].data .>= thr)
+        )
     end
 
-    cum_tac = dropdims(sum(m_tac; dims=1); dims=1)
-    cum_fd = Array(dropdims(sum(fd_data; dims=:timesteps); dims=:timesteps))
+    cum_tac = dropdims(sum(m_tac[timesteps=window].data; dims=1); dims=1)
+    cum_fd = dropdims(sum(fd_arr[timesteps=window].data; dims=1); dims=1)
 
     return n_yrs_above, cum_tac, cum_fd
 end
@@ -152,8 +159,15 @@ nyrs_cf, ctac_cf, cfd_cf = reef_metrics(rs_cf)
 
 max_time = size(rs.seed_log, :timesteps)
 starting_option(option_ts) = ADRIA.analysis.decode_option_ts(
-    option_ts, seed_year_start, seed_years, pd_frequency, max_time
+    option_ts, seed_year_start, seed_years, pd_frequency, max_time; legacy = true
 )[seed_year_start]
+
+# Parameters to analyse
+sel_rcp = 45
+sel_dhw = 5
+sel_N_seed = 1e7
+sel_n_locations = 200
+tail_fraction = 0.03
 
 # Intervention scenarios matching the representative combo
 combo_mask =
