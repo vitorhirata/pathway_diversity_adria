@@ -12,7 +12,7 @@ using CairoMakie, GeoMakie, GraphMakie
 # ----------------------------------------------------------
 # Constants
 RCP = "45"        # RCP 26, 45, 70
-dhw_scenario = 11
+dhw_scenario = 7
 N_seed = 1e7        # total seeds; split across taxa via N_seed_weights below
 min_iv_locations = 200
 seed_year_start = 2
@@ -105,15 +105,18 @@ decoded_ts = Dict(
 tstep = seed_year_start + pd_frequency  # single decision step
 mcda_method = ADRIA.mcda_methods()[Int64(rs.inputs.guided[1])]
 
-# Outcome-perf caches over window [tstep, t_end]
-rel_cover = Array(rs.outcomes[:relative_cover][scenarios=idx_scens])
+# Outcome-perf caches over window [tstep, t_end].
+# Use per-location total absolute cover (km²) rather than relative cover for the outcome metric.
+abs_cover_data = Array(ADRIA.metrics.total_absolute_cover(rs)[scenarios=idx_scens]) .* 1e-6
 fd_data = Array(rs.outcomes[:coral_evenness][scenarios=idx_scens])
 scen_to_idx = Dict(s => i for (i, s) in enumerate(idx_scens))
 t_end = min(tstep + pd_frequency - 1, max_time)
-# Per-option performance: one representative scenario per option (holding that option at
-# tstep), with per-location cumulative metrics (metric × location YAXArray).
-option_perf = ADRIA.analysis._compute_option_perf(
-    rel_cover, fd_data, idx_scens, scen_to_idx, decoded_ts, tstep, t_end
+decision_times = collect(seed_year_start:pd_frequency:(seed_year_start + seed_years - 1))
+perf_options = vcat(option_names, :nothing)
+# Per-prefix performance: keyed by (past_prefix..., candidate_option) tuples. At the first
+# switching decision (tstep), keys are 2-tuples (src_option, candidate_option).
+perf_by_prefix = ADRIA.analysis._prefix_option_perf(
+    abs_cover_data, fd_data, idx_scens, scen_to_idx, decoded_ts, decision_times, tstep, t_end
 )
 
 dms = ADRIA.readcubedata(
@@ -132,9 +135,18 @@ similarity = zeros(n_opt, n_opt)
 for i in idx_scens
     src = decoded_ts[i][tstep - 1]
     dst = decoded_ts[i][tstep]
+    dst == :nothing && continue  # skip do-nothing scenarios (not plotted)
     r = opt_idx[src]
     c = opt_idx[dst]
     dm = dms[timesteps=ADRIA.At(tstep), scenarios=ADRIA.At(i)]
+
+    # Build per-src option_perf dict (mirrors pathway_diversity internals): keyed by
+    # candidate option symbol, performance conditioned on the same past prefix (src).
+    option_perf::Dict{Symbol, YAXArray} = Dict(
+        o => perf_by_prefix[(src, o)]
+        for o in perf_options
+        if haskey(perf_by_prefix, (src, o))
+    )
 
     # combined (normalized) switching probability to dst -- matches the model
     prob_matrix[r, c] = ADRIA.analysis.switching_probability(
@@ -160,19 +172,23 @@ for i in idx_scens
     distance_port[r, c] = ADRIA.analysis.distance_port_score(u_dst, u_src, ports)
     similarity[r, c] = ADRIA.analysis.option_similarity(u_dst, u_src)
 
-    # 2 outcome subcomponents (mirror switching_probability internals: per-location
-    # paired difference between candidate and past option representatives)
-    past_performance = option_perf[src]
-    candidate_performance = option_perf[dst]
-
-    cum_rel_tac_diff[r, c] = ADRIA.analysis.two_sided_cvar(
-        candidate_performance[metric=ADRIA.At(:rel_tac)] ./ past_performance[metric=ADRIA.At(:rel_tac)] .- 1;
-        σ=ADRIA.analysis._σ_rel_tac
-    )
-    cum_fd_diff[r, c] = ADRIA.analysis.two_sided_cvar(
-        candidate_performance[metric=ADRIA.At(:fd)] ./ past_performance[metric=ADRIA.At(:fd)] .- 1;
-        σ=ADRIA.analysis._σ_fd
-    )
+    # 2 outcome subcomponents (mirror switching_probability internals): keeping the same
+    # option is neutral (0.5); switching compares candidate against the :nothing counterfactual.
+    if src == dst
+        cum_rel_tac_diff[r, c] = 0.5
+        cum_fd_diff[r, c] = 0.5
+    elseif haskey(option_perf, :nothing) && haskey(option_perf, dst)
+        counter = option_perf[:nothing]
+        cand_perf = option_perf[dst]
+        cum_rel_tac_diff[r, c] = ADRIA.analysis.two_sided_cvar(
+            cand_perf[metric=ADRIA.At(:rel_tac)] ./ counter[metric=ADRIA.At(:rel_tac)] .- 1;
+            σ=ADRIA.analysis._σ_rel_tac
+        )
+        cum_fd_diff[r, c] = ADRIA.analysis.two_sided_cvar(
+            cand_perf[metric=ADRIA.At(:fd)] ./ counter[metric=ADRIA.At(:fd)] .- 1;
+            σ=ADRIA.analysis._σ_fd
+        )
+    end
 end
 
 # ----------------------------------------------------------
