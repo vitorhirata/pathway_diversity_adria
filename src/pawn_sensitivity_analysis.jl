@@ -29,6 +29,9 @@ ADRIA.fix_factor!(dom;
 
 N_seeds = [1e6, 1e7, 5e7, 1e8]
 min_locations = [10, 50, 100, 500, 1000]
+N_seed_weights = (
+    N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0
+)
 options = ADRIA.analysis.option_seed_preference(; include_weights=true)
 dhw_scenarios = 1:11
 
@@ -40,11 +43,11 @@ row = 1
 for N_seed in N_seeds, (opt_idx, option) in enumerate(eachrow(options)),
     dhw_scenario in dhw_scenarios, min_location in min_locations
 
-    scens_base[row, :N_seed_TA] = N_seed ÷ 5
-    scens_base[row, :N_seed_CA] = N_seed ÷ 5
-    scens_base[row, :N_seed_CNA] = N_seed ÷ 5
-    scens_base[row, :N_seed_SM] = N_seed ÷ 5
-    scens_base[row, :N_seed_LM] = N_seed ÷ 5
+    scens_base[row, :N_seed_TA] = N_seed * N_seed_weights.N_seed_TA
+    scens_base[row, :N_seed_CA] = N_seed * N_seed_weights.N_seed_CA
+    scens_base[row, :N_seed_CNA] = N_seed * N_seed_weights.N_seed_CNA
+    scens_base[row, :N_seed_SM] = N_seed * N_seed_weights.N_seed_SM
+    scens_base[row, :N_seed_LM] = N_seed * N_seed_weights.N_seed_LM
     scens_base[row, :seed_heat_stress] = option[2]
     scens_base[row, :seed_in_connectivity] = option[3]
     scens_base[row, :seed_out_connectivity] = option[4]
