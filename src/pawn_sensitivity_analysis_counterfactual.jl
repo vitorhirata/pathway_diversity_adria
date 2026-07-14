@@ -135,17 +135,6 @@ end
 cum_tac = dropdims(sum(m_tac; dims=1); dims=1)   # (locations, scenarios)
 cum_fd = dropdims(sum(fd_data; dims=:timesteps); dims=:timesteps)  # (locations, scenarios)
 
-# Reefs seeded in at least one intervention scenario (across all options, dhw, RCPs)
-seed_start = Int(rs.inputs.seed_year_start[1])
-n_seed_years = Int(rs.inputs.seed_years[1])
-seed_ts = seed_start:(seed_start + n_seed_years - 1)
-seed_per_reef_per_ts_scen = dropdims(
-    sum(rs.seed_log[timesteps=seed_ts, scenarios=intervention_idxs]; dims=:coral_id);
-    dims=:coral_id
-)
-never_seeded = vec(all(seed_per_reef_per_ts_scen.data .== 0; dims=(1, 3)))
-active_mask = .!never_seeded
-
 # ── Counterfactual-relative tail metric ───────────────────────────────────────
 
 """
@@ -184,12 +173,12 @@ y_fd_bot = fill(NaN, n_scens_rs);   y_fd_top = fill(NaN, n_scens_rs)
 for s in intervention_idxs
     cf_s = cf_lookup[(rs.inputs.dhw_scenario[s], rs.inputs.RCP[s])]
 
-    opt_nyrs = Float64.(n_yrs_above.data[active_mask, s])
-    cf_nyrs = Float64.(n_yrs_above.data[active_mask, cf_s])
-    opt_tac = cum_tac[active_mask, s]
-    cf_tac = cum_tac[active_mask, cf_s]
-    opt_fd = cum_fd.data[active_mask, s]
-    cf_fd = cum_fd.data[active_mask, cf_s]
+    opt_nyrs = Float64.(n_yrs_above.data[:, s])
+    cf_nyrs = Float64.(n_yrs_above.data[:, cf_s])
+    opt_tac = cum_tac[:, s]
+    cf_tac = cum_tac[:, cf_s]
+    opt_fd = cum_fd.data[:, s]
+    cf_fd = cum_fd.data[:, cf_s]
 
     y_nyrs_bot[s], y_nyrs_top[s] =
         delta_tail_ratio(opt_nyrs, cf_nyrs; tail_fraction=tail_fraction, norm=float(seed_years))
