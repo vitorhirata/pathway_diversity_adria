@@ -28,39 +28,20 @@ dom = ADRIA.load_domain(pd_config["domain_path"], rcps[1];
     calib_params_fn=pd_config["coral_param_path"],
     timeframe=(2022, 2022 + seed_years + 2 + 5)
 )
-ms = ADRIA.model_spec(dom)
-
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "MCCriteriaWeights").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "Coral").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "GrowthAcceleration").fieldname)
+fix_common_parameters!(dom)
 
 ADRIA.fix_factor!(dom;
-    wave_scenario=1,
-    guided=1,
     # Baseline only; every scenario row overrides min_iv_locations explicitly below.
     min_iv_locations=min_iv_locations_list[1],
-    plan_horizon=5.0,
-    N_mc_settlers=0,
-    fogging=0.0,
-    SRM=0.0,
-    mcb_duration=0,
-    mcb_albedo=0,
-    seed_year_start=2,
     seed_years=seed_years,
-    seed_deployment_freq=1,
-    seed_strategy=1,
     seeding_devices_per_m2=5,
     a_adapt=5.0,
-    a_adapt_ref=5,
     # Baseline only; every scenario row overrides N_seed_* explicitly below.
     N_seed_TA=N_seed_totals[1] * N_seed_weights.N_seed_TA,
     N_seed_CA=N_seed_totals[1] * N_seed_weights.N_seed_CA,
     N_seed_CNA=N_seed_totals[1] * N_seed_weights.N_seed_CNA,
     N_seed_SM=N_seed_totals[1] * N_seed_weights.N_seed_SM,
-    N_seed_LM=N_seed_totals[1] * N_seed_weights.N_seed_LM,
-    depth_min=2.0,
-    depth_offset=25.0
+    N_seed_LM=N_seed_totals[1] * N_seed_weights.N_seed_LM
 )
 
 options = ADRIA.analysis.option_seed_preference(; include_weights=true)

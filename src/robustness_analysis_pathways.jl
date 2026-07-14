@@ -32,31 +32,12 @@ dom = ADRIA.load_domain(
     calib_params_fn=pd_config["coral_param_path"],
     timeframe=(2022, 2022 + seed_years + 2 + 5)
 )
-ms = ADRIA.model_spec(dom)
-
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "MCCriteriaWeights").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "Coral").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "GrowthAcceleration").fieldname)
+fix_common_parameters!(dom)
 
 ADRIA.fix_factor!(dom;
-    seed_year_start=seed_year_start,
     seed_years=seed_years,
-    seed_deployment_freq=1,
     seeding_devices_per_m2=5,
-    seed_strategy=1,
-    a_adapt=5.0,
-    a_adapt_ref=5,
-    plan_horizon=5.0,
-    guided=1,
-    depth_min=2.0,
-    depth_offset=25.0,
-    fogging=0.0,
-    SRM=0.0,
-    mcb_duration=0,
-    mcb_albedo=0,
-    N_mc_settlers=0,
-    wave_scenario=1
+    a_adapt=5.0
 )
 
 # ── Build + run counterfactual ResultSet (one per dhw × rcp, N_seed = 0) ──────

@@ -18,37 +18,14 @@ dom = ADRIA.load_domain(
     # timeframe: seed_years + 2 (start seeding), 5 (extra years)
     timeframe=(2027, 2027 + seed_years + 2 + 5)
 )
-ms = ADRIA.model_spec(dom)
-
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "MCCriteriaWeights").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "Coral").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "GrowthAcceleration").fieldname)
+fix_common_parameters!(dom)
 
 # Generate scenarios
 ADRIA.fix_factor!(dom;
     #Seeding params
-    seed_year_start=2,     # Start as soon as possible. Possible parameter to vary
     seed_years=seed_years, # Based on pathway diversity analysis time
-    seed_deployment_freq=1,# Lower bound of distribution. Seed every year.
     seeding_devices_per_m2=5,
-    seed_strategy=1,        # Periodic deployment
-    a_adapt=5.0,
-    a_adapt_ref=5,
-    # Interventions params
-    plan_horizon=5.0,     # Upper bound of distribution
-    guided=1,              # CoCoSo. Better performance based on initial analysis
-    #Decision params. Chosen to allow more locations receive intervention
-    depth_min=2.0,         # Lower bound of distribution
-    depth_offset=25.0,     # Upper bound of distribution
-    #Other interventions (no fogging, shading or moving corals)
-    fogging=0.0,
-    SRM=0.0,
-    mcb_duration=0,
-    mcb_albedo=0,
-    N_mc_settlers=0,
-    #Environmental params
-    wave_scenario=1
+    a_adapt=5.0
 )
 
 dhw_scenarios = [2, 7, 10]

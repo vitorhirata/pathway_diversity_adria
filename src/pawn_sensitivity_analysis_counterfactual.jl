@@ -46,37 +46,10 @@ dom = ADRIA.load_domain(
     # timeframe: seed_years + 2 (start seeding), 5 (extra years)
     timeframe=(2022, 2022 + seed_years + 2 + 5)
 )
-ms = ADRIA.model_spec(dom)
+fix_common_parameters!(dom)
 
-# Fix four classes of parameters
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "FogCriteriaWeights").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "MCCriteriaWeights").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "Coral").fieldname)
-ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "GrowthAcceleration").fieldname)
-
-# Fix manually some Environmental, Intervention and Depth parameters.
 # seeding_devices_per_m2 and a_adapt are intentionally NOT fixed here: they are varied.
-ADRIA.fix_factor!(dom;
-    # EnvironmentalLayer parameters
-    wave_scenario=1,
-    # Intervention parameters
-    guided=1,                  # Use CoCoSo method
-    plan_horizon=5.0,         # Upper bound of sampling distribution
-    N_mc_settlers=0,           # No moving corals
-    fogging=0.0,               # No fogging
-    SRM=0.0,                   # No shadding
-    mcb_duration=0,            # No marine cloud brightening
-    mcb_albedo=0,
-    # Seending intervention parameters
-    seed_year_start=2,         # Start as soon as possible
-    seed_years=seed_years,
-    seed_deployment_freq=1,    # Lower bound of sampling distribution. Seed every year
-    seed_strategy=1,           # Periodic seed deployment
-    a_adapt_ref=5,
-    # decision.DepthThresholds parameters
-    depth_min=2.0,             # Lower bound of distribution
-    depth_offset=25.0         # Upper bound of distribution
-)
+ADRIA.fix_factor!(dom; seed_years=seed_years)
 
 options = ADRIA.analysis.option_seed_preference(; include_weights=true)
 
