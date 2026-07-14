@@ -16,7 +16,7 @@ dom = ADRIA.load_domain(
     pd_config["domain_path"], rcps[1];
     calib_params_fn=pd_config["coral_param_path"],
     # timeframe: seed_years + 2 (start seeding), 5 (extra years)
-    timeframe=(2027, 2027 + seed_years + 2 + 5)
+    timeframe=(2022, 2022 + seed_years + 2 + 5)
 )
 fix_common_parameters!(dom)
 
