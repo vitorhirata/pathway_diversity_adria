@@ -229,23 +229,35 @@ function _heatmap_panel!(ax, mat, colorrange=(0.0, 1.0), digits=2)
     )
 end
 
-function _panel_axis(fig, pos, title; ylabel="")
+function _panel_axis(fig, pos, title; ylabel="", xlabel="", kwargs...)
     return Axis(
         fig[pos...];
         title=title,
-        xlabel="To",
+        xlabel=xlabel,
         ylabel=ylabel,
         xticks=(1:n_opt, option_labels),
         yticks=(1:n_opt, option_labels),
         xticklabelrotation=2.0 / π,
-        yreversed=true
+        yreversed=true,
+        titlesize=22,
+        xlabelsize=22,
+        ylabelsize=22,
+        xticklabelsize=18,
+        yticklabelsize=18,
+        kwargs...
     )
 end
 
-fig = Figure(; size=(3 * 520, 2 * 450))
-# Row 1
-ax1 = _panel_axis(fig, (1, 1), "Switching probability (%)"; ylabel="From")
-heatmap!(ax1, transpose(prob_matrix); colorrange=(0.0, 1.0))
+fig = Figure()
+panel_px = 350   # fixed square size shared by every heatmap panel
+cbar_width = 25
+
+# Left: switching probability heatmap, same size as the others and vertically centred
+ax1 = _panel_axis(
+    fig, (1:2, 2), "Switching probability (%)";
+    ylabel="From", width=panel_px, height=panel_px, valign=:center
+)
+heatmap!(ax1, 100 .* transpose(prob_matrix); colorrange=(10.0, 32.0))
 text!(ax1,
     string.(round.(vec(100 * prob_matrix); digits=1));
     position=[Point2f(x, y) for x in 1:n_opt for y in 1:n_opt],
@@ -253,12 +265,43 @@ text!(ax1,
     color=:white,
     fontsize=12
 )
-_heatmap_panel!(_panel_axis(fig, (1, 2), "Cumulative relative TAC diff"), cum_rel_tac_diff)
-_heatmap_panel!(_panel_axis(fig, (1, 3), "Cumulative functional diversity diff"), cum_fd_diff)
-# Row 2
-_heatmap_panel!(_panel_axis(fig, (2, 1), "Distance to port"; ylabel="From"), distance_port)
-_heatmap_panel!(_panel_axis(fig, (2, 2), "Option similarity"), similarity)
-Colorbar(fig[1:2, 4]; limits=(0.0, 1.0))
+# Left colorbar for the switching probability, matched to the panel height
+Colorbar(
+    fig[1:2, 1]; limits=(10.0, 32.0), flipaxis=false, width=cbar_width, height=panel_px,
+    valign=:center, label="Switching probability", labelsize=22, ticklabelsize=18
+)
+
+# Right: 2x2 grid of subcomponents, aligned with each other and matched to the panel size
+_heatmap_panel!(
+    _panel_axis(
+        fig, (1, 3), "Cumulative absolute cover";
+        ylabel="From", width=panel_px, height=panel_px, xticklabelsvisible=false
+    ),
+    cum_rel_tac_diff
+)
+_heatmap_panel!(
+    _panel_axis(
+        fig, (1, 4), "Cumulative functional diversity";
+        width=panel_px, height=panel_px, xticklabelsvisible=false, yticklabelsvisible=false
+    ),
+    cum_fd_diff
+)
+_heatmap_panel!(
+    _panel_axis(fig, (2, 3), "Distance to port"; ylabel="From", xlabel="To", width=panel_px, height=panel_px, ),
+    distance_port
+)
+_heatmap_panel!(
+    _panel_axis(
+        fig, (2, 4), "Option similarity"; xlabel="To", width=panel_px, height=panel_px, yticklabelsvisible=false
+    ),
+    similarity
+)
+# Right colorbar, matched in size to the left one
+Colorbar(
+    fig[1:2, 5]; limits=(0.0, 1.0), width=cbar_width, height=panel_px, valign=:center,
+    ticklabelsize=18, label="Scores used in probability", labelsize=22
+)
+resize_to_layout!(fig)
 save(joinpath(pd_config["plot_output_path"], "pd_figures", "option_scores_matrix.png"), fig)
 
 # ----------------------------------------------------------
