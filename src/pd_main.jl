@@ -10,7 +10,7 @@ Main parameters varied:
 include("src/common.jl")
 using GraphMakie, CairoMakie, SankeyMakie
 
-rcps = ["45", "70"]
+rcps = ["45"]
 seed_years = 20
 dom = ADRIA.load_domain(
     pd_config["domain_path"], rcps[1];
@@ -31,7 +31,7 @@ ADRIA.fix_factor!(dom;
 dhw_scenarios = [2, 7, 10]
 n_seed_locations = [
     [1e6, 200],
-    [1e7, 200],
+    #[1e7, 200],
     [1e8, 200]
 ]
 
@@ -168,77 +168,15 @@ options = CSV.read(
 scenario_probs = CSV.read(
     joinpath(pd_config["plot_output_path"], "scenario_probabilities.csv"), DataFrame
 )
+# Filter scenarios with zero probability
+scenario_probs = filter(!iszero, scenario_probs)
+
 
 min_pd = floor(minimum(options.pathway_diversity) * 0.98; digits=1)
 max_pd = ceil(maximum(options.pathway_diversity) * 1.02; digits=1)
 
-# RCP plot
-option_fix_seed = options[
-    options.N_seed .== 1e7 .&& options.n_locations .== 200 .&& options.rcp .!= 26,
-    [:option_name, :pathway_diversity, :dhw_scenario, :rcp]
-]
-
-option_fix_seed = combine(groupby(option_fix_seed, [:option_name, :rcp])) do subdf
-    diversity_values = subdf.pathway_diversity
-    (
-        mean_pd=mean(diversity_values),
-        min_pd=minimum(diversity_values),
-        max_pd=maximum(diversity_values)
-    )
-end
-
-# Create mapping columns
 unique_options = unique(options.option_name)
 option_map = Dict(opt => i for (i, opt) in enumerate(unique_options))
-option_fix_seed.option_idx = [option_map[opt] for opt in option_fix_seed.option_name]
-
-unique_rcp = sort(unique(option_fix_seed.rcp))
-rcp_map = Dict(rcp => i for (i, rcp) in enumerate(unique_rcp))
-option_fix_seed.rcp_idx = [rcp_map[rcp] for rcp in option_fix_seed.rcp]
-
-# Within each RCP, rank options by descending pathway diversity so the
-# highest-value option appears first (leftmost)
-option_fix_seed = combine(groupby(option_fix_seed, :rcp_idx)) do subdf
-    subdf = sort(subdf, :mean_pd; rev=true)
-    subdf.dodge_idx = 1:nrow(subdf)
-    subdf
-end
-sort!(option_fix_seed, [:rcp_idx, :dodge_idx])
-
-# Plot RCP figure
-fig = Figure(; size=(800, 300))
-ax = Axis(fig[1, 1];
-    xlabel="RCP",
-    ylabel="Pathway Diversity",
-    yticks=(min_pd:round((max_pd - min_pd) / 5; digits=2):max_pd),
-    xticks=(1:length(unique_rcp), string.(unique_rcp)),
-    limits=(nothing, (min_pd, max_pd))
-)
-palette = Makie.current_default_theme().palette.color[]
-barplot!(
-    ax,
-    option_fix_seed.rcp_idx,
-    option_fix_seed.mean_pd;
-    dodge=option_fix_seed.dodge_idx,
-    color=[palette[i] for i in option_fix_seed.option_idx]
-)
-
-n_dodge = length(unique_options)
-dodge_offsets = [(i - (n_dodge + 1) / 2) * (0.8 / n_dodge) for i in 1:n_dodge]
-dodged_x =
-    option_fix_seed.rcp_idx .+ [dodge_offsets[i] for i in option_fix_seed.dodge_idx]
-errorbars!(
-    ax,
-    dodged_x,
-    option_fix_seed.mean_pd,
-    option_fix_seed.mean_pd .- option_fix_seed.min_pd,
-    option_fix_seed.max_pd .- option_fix_seed.mean_pd;
-    color=:black,
-    whiskerwidth=6
-)
-elements = [PolyElement(; polycolor=palette[i]) for i in 1:length(unique_options)]
-Legend(fig[1, 2], elements, string.(unique_options), "Option")
-save(joinpath(pd_config["plot_output_path"], "pathway_diversity_rcp.png"), fig)
 
 # seed plot
 option_fix_rcp = options[
@@ -248,7 +186,7 @@ option_fix_rcp = options[
 option_fix_rcp.seed =
     string.(option_fix_rcp.N_seed) .* "_" .* string.(option_fix_rcp.n_locations)
 option_fix_rcp = option_fix_rcp[
-    option_fix_rcp.seed .∈ [["100_15", "1000000_200", "10000000_200", "100000000_200"]],
+    option_fix_rcp.seed .∈ [["1000000_200", "100000000_200"]],
     [:option_name,
         :pathway_diversity,
         :dhw_scenario,
@@ -305,7 +243,7 @@ elements = [PolyElement(; polycolor=palette[i]) for i in 1:length(unique_seed)]
 Legend(
     fig[1, 2],
     elements,
-    ["100", "1 million", "10 million", "100 million"],
+    ["1 million", "100 million"],
     "Number of seeds"
 )
 save(joinpath(pd_config["plot_output_path"], "pathway_diversity_seed.png"), fig)
@@ -459,11 +397,10 @@ end
 # One row per (N_seed, RCP) configuration, all at the same DHW scenario. Each box
 # aggregates the probabilities of every scenario that shares a starting option.
 
-boxplot_dhw = 5  # change to inspect a different DHW scenario
+boxplot_dhw = 7  # change to inspect a different DHW scenario
 boxplot_configs = [
-    (N_seed=10_000_000, n_locations=200, rcp=45),
-    (N_seed=10_000_000, n_locations=200, rcp=70),
     (N_seed=1_000_000, n_locations=200, rcp=45)
+    (N_seed=100_000_000, n_locations=200, rcp=45),
 ]
 
 n_opt = length(option_names)
@@ -503,9 +440,6 @@ save(joinpath(pd_config["plot_output_path"], "probability_boxplots.png"), fig)
 # Configurable parameter sets. Each entry is one colored line; n_locations fixed at 200.
 lockin_configs = [
     (N_seed=1_000_000,   n_locations=200, rcp=45),
-    (N_seed=1_000_000,   n_locations=200, rcp=70),
-    (N_seed=10_000_000,  n_locations=200, rcp=45),
-    (N_seed=10_000_000,  n_locations=200, rcp=70),
     (N_seed=100_000_000, n_locations=200, rcp=45)
 ]
 
