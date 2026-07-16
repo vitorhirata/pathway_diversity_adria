@@ -108,7 +108,7 @@ nyrs, ctac, cfd = reef_metrics(rs)
 
 max_time = size(rs.seed_log, :timesteps)
 starting_option(option_ts) = ADRIA.analysis.decode_option_ts(
-    option_ts, seed_year_start, seed_years, pd_frequency, max_time; legacy = true
+    option_ts, seed_year_start, seed_years, pd_frequency, max_time
 )[seed_year_start]
 
 # Parameters to analyse
