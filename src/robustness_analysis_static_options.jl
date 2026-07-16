@@ -418,7 +418,7 @@ Legend(fig[1, 2],
 )
 
 save(
-    joinpath(pd_config["plot_output_path"], "robustness_net_summary_h$(horizon).png"),
+    joinpath(pd_config["plot_output_path"], "robustness_net_summary_h$(summary_configs[1].horizon).png"),
     fig; px_per_unit=2
 )
 @info "Saved robustness_net_summary_h$(horizon).png"
