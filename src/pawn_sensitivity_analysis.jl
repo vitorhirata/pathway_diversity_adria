@@ -72,7 +72,7 @@ rs = ADRIA.run_scenarios(dom, scens_base, rcps)
 # Reefs that received seeding in every intervention scenario (across timesteps 2-32)
 seed_per_reef_per_scen = dropdims(
     sum(
-        rs.seed_log[timesteps=2:32, scenarios=1:nrow(rs.inputs)];
+        rs.seed_log[scenarios=1:nrow(rs.inputs)];
         dims=(:timesteps, :coral_id)
     );
     dims=(:timesteps, :coral_id)
