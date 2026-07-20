@@ -233,6 +233,66 @@ function plot_robustness_param_scatter(rob_df, option_names, option_colors, opti
     @info "Saved robustness_pathways_param_scatter_rcp$(sel_rcp).png"
 end
 
+"""
+    plot_robustness_vs_diversity(rob_div_df, option_names, option_colors, option_labels, sel_rcp)
+
+Facetted scatter of robustness (y) vs pathway diversity (x), coloured by starting option, one
+panel per parameter set. Panels are gridded so columns = number of locations and rows = number
+of seeds. All panels share the same x scale and the same y scale (limits fixed globally).
+`rob_div_df` is the output of [`join_robustness_diversity`].
+"""
+function plot_robustness_vs_diversity(
+    rob_div_df, option_names, option_colors, option_labels, sel_rcp
+)
+    _sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(round(c; digits=1))e$e")
+
+    n_seeds = sort(unique(rob_div_df.N_seed))       # rows (grid y-axis = number of seeds)
+    n_locs = sort(unique(rob_div_df.n_locations))   # columns (grid x-axis = number of locations)
+    n_r, n_c = length(n_seeds), length(n_locs)
+
+    # Shared limits: same x scale and same y scale across every panel (with a small margin).
+    _pad(lo, hi) = (m = 0.05 * (hi - lo + eps()); (lo - m, hi + m))
+    xlims = _pad(extrema(rob_div_df.pathway_diversity)...)
+    ylims = _pad(extrema(rob_div_df.robustness)...)
+
+    fig = Figure(size=(320 * n_c + 220, 260 * n_r + 90))
+    for (ri, ns) in enumerate(n_seeds)
+        Label(fig[ri, 0], "$(_sci(ns)) seeds"; rotation=π / 2, font=:bold, tellheight=false)
+    end
+    for (ci, nl) in enumerate(n_locs)
+        Label(fig[0, ci], "$(nl) locations"; font=:bold, tellwidth=false)
+    end
+
+    for (ri, ns) in enumerate(n_seeds), (ci, nl) in enumerate(n_locs)
+        ax = Axis(fig[ri, ci];
+            limits=(xlims, ylims),
+            xlabel=ri == n_r ? "Pathway diversity" : "",
+            ylabel=ci == 1 ? "Robustness (worst-DHW median)" : ""
+        )
+        sub = rob_div_df[(rob_div_df.N_seed .== ns) .& (rob_div_df.n_locations .== nl), :]
+        for (o_i, option) in enumerate(option_names)
+            r = sub[sub.start_option .== string(option), :]
+            isempty(r) && continue
+            scatter!(ax, r.pathway_diversity, r.robustness; color=option_colors[o_i], markersize=12)
+        end
+    end
+
+    Legend(fig[1:n_r, n_c + 1],
+        [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
+        option_labels;
+        title="Starting option", framevisible=false
+    )
+
+    save(
+        joinpath(
+            pd_config["plot_output_path"],
+            "robustness_vs_diversity_rcp$(sel_rcp).png"
+        ),
+        fig; px_per_unit=2
+    )
+    @info "Saved robustness_vs_diversity_rcp$(sel_rcp).png"
+end
+
 # ── Static-option figures ─────────────────────────────────────────────────────
 
 """

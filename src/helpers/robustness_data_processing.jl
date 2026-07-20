@@ -350,6 +350,32 @@ function worst_dhw_robustness(
     return df
 end
 
+"""
+    join_robustness_diversity(rob_df, pd_df, sel_rcp) -> DataFrame
+
+Pair each (starting option × parameter set) with a robustness value and a pathway-diversity
+value. Robustness is `rob_df.median` (worst-DHW median from [`worst_dhw_robustness`]);
+pathway diversity is the *worst* (minimum over DHW scenarios) value from `pd_df` (an
+options-format table: `option_name, pathway_diversity, N_seed, dhw_scenario, n_locations, rcp`)
+at `sel_rcp`. Returns columns `start_option, N_seed, n_locations, robustness, pathway_diversity`.
+"""
+function join_robustness_diversity(rob_df, pd_df, sel_rcp)
+    worst = combine(
+        groupby(pd_df[pd_df.rcp .== sel_rcp, :], [:option_name, :N_seed, :n_locations])
+    ) do sub
+        (pathway_diversity=minimum(sub.pathway_diversity),)
+    end
+    worst.N_seed = Float64.(worst.N_seed)
+    rename!(worst, :option_name => :start_option)
+
+    joined = innerjoin(
+        rob_df[:, [:start_option, :N_seed, :n_locations, :median]],
+        worst; on=[:start_option, :N_seed, :n_locations]
+    )
+    rename!(joined, :median => :robustness)
+    return joined
+end
+
 # ── Probability-weighted tail statistics (pathways analysis) ───────────────────
 
 """

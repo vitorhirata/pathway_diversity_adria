@@ -153,3 +153,17 @@ plot_pathways_weighted(
     weighted_tail_stats, option_names, option_colors, option_labels, sel_rcp, sel_dhw;
     point_stat=:median
 )
+
+# ── Figure D — robustness vs pathway diversity, facetted by parameter set ─────
+#
+#   Load a pathway-diversity table (same format as pd_main.jl's `options`:
+#   option_name, pathway_diversity, N_seed, dhw_scenario, n_locations, rcp) and, per parameter
+#   set (panel), scatter worst-DHW median robustness (y) against worst-DHW pathway diversity (x),
+#   coloured by starting option. Panels are gridded: columns = n_locations, rows = N_seed.
+
+pathway_diversity_csv_path = ""  # pathway_diversity.csv written by pd_main.jl
+
+pd_df = CSV.read(pathway_diversity_csv_path, DataFrame)
+rob_div_df = join_robustness_diversity(rob_df, pd_df, sel_rcp)
+
+plot_robustness_vs_diversity(rob_div_df, option_names, option_colors, option_labels, sel_rcp)
