@@ -399,8 +399,8 @@ end
 
 boxplot_dhw = 7  # change to inspect a different DHW scenario
 boxplot_configs = [
-    (N_seed=1_000_000, n_locations=200, rcp=45)
-    (N_seed=100_000_000, n_locations=200, rcp=45),
+    (N_seed=1_000_000, n_locations=200, rcp=45),
+    (N_seed=100_000_000, n_locations=200, rcp=45)
 ]
 
 n_opt = length(option_names)
@@ -534,3 +534,44 @@ elements = [LineElement(; color=palette[i]) for i in 1:n_cfg]
 labels = ["$(_sci(cfg.N_seed)) · RCP$(cfg.rcp)" for cfg in lockin_configs]
 Legend(fig[1, 2], elements, labels, "Parameter set")
 save(joinpath(pd_config["plot_output_path"], "lockin_scores.png"), fig)
+
+# ----------------------------------------------------------
+# Worst-DHW pathway diversity per starting option and parameter set
+# For each (starting option × parameter set = N_seed × n_locations), at RCP 45, select the
+# worst (minimum) pathway diversity across DHW scenarios. Scatter: x = parameter set,
+# y = pathway diversity, colour = starting option, one line linking each option across sets.
+
+pd_rcp45 = options[options.rcp .== 45, :]
+worst_pd = combine(
+    groupby(pd_rcp45, [:option_name, :N_seed, :n_locations])
+) do subdf
+    (worst_pd=minimum(subdf.pathway_diversity),)
+end
+
+# Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed
+pd_param_sets = sort(
+    unique([(r.N_seed, r.n_locations) for r in eachrow(worst_pd)]); by=first
+)
+pd_param_idx = Dict(c => i for (i, c) in enumerate(pd_param_sets))
+pd_param_labels = ["$(_sci(c[1])) · $(c[2]) locs" for c in pd_param_sets]
+
+fig = Figure(; size=(800, 400))
+ax = Axis(fig[1, 1];
+    xticks=(1:length(pd_param_sets), pd_param_labels),
+    xlabel="Parameter set",
+    ylabel="Pathway diversity",
+    title="Pathway diversity by starting option"
+)
+for (o_i, option) in enumerate(unique_options)
+    sub = worst_pd[worst_pd.option_name .== option, :]
+    isempty(sub) && continue
+    x = [pd_param_idx[(r.N_seed, r.n_locations)] for r in eachrow(sub)]
+    order = sortperm(x)
+    scatterlines!(ax, x[order], sub.worst_pd[order]; color=palette[o_i], markersize=10)
+end
+Legend(fig[1, 2],
+    [MarkerElement(; marker=:circle, color=palette[i]) for i in 1:length(unique_options)],
+    string.(unique_options);
+    title="Starting option", framevisible=false
+)
+save(joinpath(pd_config["plot_output_path"], "pathway_diversity_worst_dhw.png"), fig)
