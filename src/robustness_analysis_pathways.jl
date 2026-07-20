@@ -44,11 +44,11 @@ option_names = ADRIA.analysis.option_seed_preference().option_name
 n_options = length(option_names)
 
 # Parameters to analyse
+tail_fraction = 0.03
 sel_rcp = 45
 sel_dhw = 7
 sel_N_seed = 1e6
 sel_n_locations = 200
-tail_fraction = 0.03
 
 # ── Compute per-reef metrics and group pathways ───────────────────────────────
 
@@ -104,6 +104,23 @@ for (o_i, option) in enumerate(option_names)
 end
 
 plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, sel_rcp, sel_dhw)
+
+# ── Aggregated robustness across DHW scenarios and parameter sets ─────────────
+#
+#   Per pathway, collapse the 6 tail ratios into one scalar (mean over metrics of top − |bottom|).
+#   Then, for each (starting option × parameter set), take the median robustness over pathways per
+#   DHW and keep the worst (smallest-median) DHW; report that DHW's median/min/max over pathways.
+
+dhw_scenarios = [2, 7, 10]  # all DHW members present in the run
+param_sets = detect_param_sets(rs, sel_rcp; N_seed_weights)
+
+rob_df = worst_dhw_robustness(
+    rs, option_names, opt_metric_mats;
+    dhw_scenarios, param_sets, sel_rcp,
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+)
+
+plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
 
 # ── Probability-weighted tail statistics per starting option ──────────────────
 #

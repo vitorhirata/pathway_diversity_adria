@@ -175,6 +175,64 @@ function plot_pathways_weighted(
     @info "Saved robustness_pathways_weighted_$(point_stat)_rcp$(sel_rcp)_dhw$(sel_dhw).png"
 end
 
+"""
+    plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
+
+Worst-DHW pathway robustness per (starting option × parameter set). x = parameter set,
+y = robustness, colour = starting option; point = median over pathways, whiskers = min/max, one
+line linking each starting option across parameter sets. `rob_df` is the output of
+[`worst_dhw_robustness`].
+"""
+function plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
+    # Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed.
+    combos = sort(unique([(r.N_seed, r.n_locations) for r in eachrow(rob_df)]); by=first)
+    combo_idx = Dict(c => i for (i, c) in enumerate(combos))
+    _sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(round(c; digits=1))e$e")
+    combo_labels = ["$(_sci(c[1])) · $(c[2]) locs" for c in combos]
+
+    fig = Figure(size=(900, 480))
+    ax = Axis(fig[1, 1];
+        xticks=(1:length(combos), combo_labels),
+        xlabel="Parameter set",
+        ylabel="Worst-DHW robustness\n(median over pathways, min–max)",
+        title="Pathway robustness by starting option — RCP $(sel_rcp)"
+    )
+    hlines!(ax, [0]; color=:black, linewidth=2)
+
+    n_dodge = n_options
+    dodge_width = 0.5
+    for (o_i, option) in enumerate(option_names)
+        df = rob_df[rob_df.start_option .== string(option), :]
+        isempty(df) && continue
+        color = option_colors[o_i]
+        offset = (o_i - (n_dodge + 1) / 2) * (dodge_width / n_dodge)
+        x = [combo_idx[(r.N_seed, r.n_locations)] for r in eachrow(df)] .+ offset
+        order = sortperm(x)
+        x = x[order]
+        med = df.median[order]
+        scatterlines!(ax, x, med; color, markersize=10)
+        errorbars!(
+            ax, x, med, med .- df.min[order], df.max[order] .- med;
+            color, whiskerwidth=6
+        )
+    end
+
+    Legend(fig[1, 2],
+        [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
+        option_labels;
+        title="Starting option", framevisible=false
+    )
+
+    save(
+        joinpath(
+            pd_config["plot_output_path"],
+            "robustness_pathways_param_scatter_rcp$(sel_rcp).png"
+        ),
+        fig; px_per_unit=2
+    )
+    @info "Saved robustness_pathways_param_scatter_rcp$(sel_rcp).png"
+end
+
 # ── Static-option figures ─────────────────────────────────────────────────────
 
 """

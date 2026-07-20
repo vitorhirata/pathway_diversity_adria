@@ -248,6 +248,108 @@ function find_counterfactual(rs, sel_dhw, sel_rcp)
     return cf_idx
 end
 
+# ── Aggregated per-pathway robustness (pathways analysis) ──────────────────────
+
+"""
+    pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_fraction, seed_years)
+
+Single scalar summarising pathway (scenario) `s`: the mean over the three metrics of the net
+tail ratio `top − |bottom|` (the third value returned by [`delta_tail_ratio`]). Metric 1
+(`n_yrs_above`) uses `norm=seed_years` as its zero-guard, matching Figures A/B; metrics 2 and 3
+use the default counterfactual-mean norm.
+"""
+function pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_fraction, seed_years)
+    _, _, r1 = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction, norm=seed_years)
+    _, _, r2 = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction)
+    _, _, r3 = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction)
+    return mean((r1, r2, r3))
+end
+
+"""
+    detect_param_sets(rs, sel_rcp; N_seed_weights) -> Vector{NamedTuple}
+
+Unique `(N_seed, n_locations)` parameter sets among the *seeded* (non-counterfactual) scenarios
+at `sel_rcp`, sorted ascending by `N_seed`. `N_seed` is the total seed budget reconstructed from
+the per-taxa columns; counterfactual rows (zero budget) are dropped.
+"""
+function detect_param_sets(rs, sel_rcp; N_seed_weights)
+    total_N_seed = rs.inputs.N_seed_TA .+ rs.inputs.N_seed_CA .+ rs.inputs.N_seed_CNA .+
+                   rs.inputs.N_seed_SM .+ rs.inputs.N_seed_LM
+    mask = (rs.inputs.RCP .== sel_rcp) .& (total_N_seed .> 0)
+    combos = unique(
+        [(N_seed=total_N_seed[i], n_locations=Int(rs.inputs.min_iv_locations[i]))
+         for i in findall(mask)]
+    )
+    return sort(combos; by=c -> c.N_seed)
+end
+
+"""
+    worst_dhw_robustness(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets, sel_rcp,
+        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction) -> DataFrame
+
+For each (starting option × parameter set), compute the per-pathway [`pathway_robustness`] under
+each DHW scenario, and keep the DHW that yields the *smallest* median robustness (worst case).
+The reported `median`/`min`/`max` are all over that worst DHW's pathway distribution.
+
+Returns a tidy table with columns
+`start_option, N_seed, n_locations, worst_dhw, median, min, max`. Options with no pathways in a
+parameter set are skipped.
+"""
+function worst_dhw_robustness(
+    rs, option_names, opt_metric_mats;
+    dhw_scenarios, param_sets, sel_rcp,
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+)
+    df = DataFrame(;
+        start_option=String[], N_seed=Float64[], n_locations=Int[], worst_dhw=Int[],
+        median=Float64[], min=Float64[], max=Float64[]
+    )
+
+    for ps in param_sets
+        # Per starting option, track the worst (smallest-median) DHW seen so far.
+        best = Dict{Any,Any}(option => nothing for option in option_names)
+
+        for sel_dhw in dhw_scenarios
+            pathways = group_pathways_by_starting_option(
+                rs, option_names;
+                sel_rcp, sel_dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
+                seed_year_start, seed_years, pd_frequency, N_seed_weights
+            )
+            cf_idx = find_counterfactual(rs, sel_dhw, sel_rcp)
+            cf_full = (
+                opt_metric_mats[1][:, cf_idx],
+                opt_metric_mats[2][:, cf_idx],
+                opt_metric_mats[3][:, cf_idx]
+            )
+
+            for option in option_names
+                idxs = pathways[option]
+                isempty(idxs) && continue
+                robs = [
+                    pathway_robustness(opt_metric_mats, cf_full, s; tail_fraction, seed_years)
+                    for s in idxs
+                ]
+                med = median(robs)
+                if isnothing(best[option]) || med < best[option].median
+                    best[option] = (
+                        median=med, min=minimum(robs), max=maximum(robs), dhw=sel_dhw
+                    )
+                end
+            end
+        end
+
+        for option in option_names
+            b = best[option]
+            isnothing(b) && continue
+            push!(df, (
+                string(option), ps.N_seed, ps.n_locations, b.dhw, b.median, b.min, b.max
+            ))
+        end
+    end
+
+    return df
+end
+
 # ── Probability-weighted tail statistics (pathways analysis) ───────────────────
 
 """
