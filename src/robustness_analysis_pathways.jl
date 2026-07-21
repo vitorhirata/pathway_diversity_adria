@@ -122,6 +122,23 @@ rob_df = worst_dhw_robustness(
 
 plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
 
+# ── Top robustness pathways per starting option and parameter set ─────────────
+#
+#   For each (starting option × parameter set), rank the per-block option sequences by their
+#   worst-over-DHW robustness (min over the DHW scenarios each sequence occurs in) and keep the
+#   top 10. Sequences are the compact 4-block pathways (e.g. "heat_stress > balanced > ...").
+
+top_pathways = top_robustness_pathways(
+    rs, option_names, opt_metric_mats;
+    dhw_scenarios, param_sets, sel_rcp,
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+)
+CSV.write(
+    joinpath(pd_config["plot_output_path"], "top_robustness_pathways_rcp$(sel_rcp).csv"),
+    top_pathways
+)
+@info "Saved top_robustness_pathways_rcp$(sel_rcp).csv"
+
 # ── Probability-weighted tail statistics per starting option ──────────────────
 #
 #   Weight the per-pathway scalars by pathway adoption probability and

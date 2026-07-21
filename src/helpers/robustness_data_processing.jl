@@ -376,6 +376,92 @@ function join_robustness_diversity(rob_df, pd_df, sel_rcp)
     return joined
 end
 
+# ── Top robustness pathways (pathways analysis) ────────────────────────────────
+
+"""
+    compact_pathway(option_ts, seed_year_start, seed_years, pd_frequency, max_time) -> Vector
+
+The per-block option sequence of a pathway: one option per `pd_frequency`-year decision block
+within the seeding window, dropping the `:nothing` padding outside `seed_years`. Length is
+`seed_years ÷ pd_frequency` (e.g. `[:heat_stress, :balanced, :functional_diversity, :heat_stress]`).
+"""
+function compact_pathway(option_ts, seed_year_start, seed_years, pd_frequency, max_time)
+    number_changes = seed_years ÷ pd_frequency
+    decision_steps = [seed_year_start + (k - 1) * pd_frequency for k in 1:number_changes]
+    return ADRIA.analysis.decode_option_ts(
+        option_ts, seed_year_start, seed_years, pd_frequency, max_time
+    )[decision_steps]
+end
+
+"""
+    top_robustness_pathways(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets,
+        sel_rcp, seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction,
+        n_top=10) -> DataFrame
+
+Per (starting option × parameter set), rank the distinct per-block option sequences
+([`compact_pathway`]) by their worst-over-DHW robustness — the minimum [`pathway_robustness`]
+across the DHW scenarios in which the sequence occurs — and keep the top `n_top`.
+
+Returns a table with columns `start_option, N_seed, n_locations, Top1 … TopN`, where each `TopK`
+cell is the `" > "`-joined option sequence (empty string when fewer than `n_top` sequences exist).
+"""
+function top_robustness_pathways(
+    rs, option_names, opt_metric_mats;
+    dhw_scenarios, param_sets, sel_rcp,
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction, n_top::Int=10
+)
+    max_time = size(rs.seed_log, :timesteps)
+    top_cols = [Symbol("Top$i") for i in 1:n_top]
+
+    df = DataFrame(; start_option=String[], N_seed=Float64[], n_locations=Int[])
+    for c in top_cols
+        df[!, c] = String[]
+    end
+
+    for ps in param_sets
+        for option in option_names
+            # sequence string => worst (min) robustness across the DHW scenarios it occurs in
+            worst_rob = Dict{String,Float64}()
+
+            for sel_dhw in dhw_scenarios
+                pathways = group_pathways_by_starting_option(
+                    rs, option_names;
+                    sel_rcp, sel_dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
+                    seed_year_start, seed_years, pd_frequency, N_seed_weights
+                )
+                idxs = pathways[option]
+                isempty(idxs) && continue
+
+                cf_idx = find_counterfactual(rs, sel_dhw, sel_rcp)
+                cf_full = (
+                    opt_metric_mats[1][:, cf_idx],
+                    opt_metric_mats[2][:, cf_idx],
+                    opt_metric_mats[3][:, cf_idx]
+                )
+
+                for s in idxs
+                    seq = compact_pathway(
+                        rs.inputs.option_ts[s], seed_year_start, seed_years, pd_frequency, max_time
+                    )
+                    key = join(string.(seq), " > ")
+                    rob = pathway_robustness(opt_metric_mats, cf_full, s; tail_fraction, seed_years)
+                    worst_rob[key] = haskey(worst_rob, key) ? min(worst_rob[key], rob) : rob
+                end
+            end
+
+            ranked = sort(collect(worst_rob); by=last, rev=true)
+            tops = fill("", n_top)
+            for (i, (key, _)) in enumerate(ranked)
+                i > n_top && break
+                tops[i] = key
+            end
+            push!(df, (string(option), ps.N_seed, ps.n_locations, tops...))
+        end
+    end
+
+    return df
+end
+
 # ── Probability-weighted tail statistics (pathways analysis) ───────────────────
 
 """
