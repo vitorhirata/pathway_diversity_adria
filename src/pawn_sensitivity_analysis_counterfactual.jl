@@ -2,11 +2,13 @@
 PAWN sensitivity analysis on local, counterfactual-relative tail metrics.
 
 Same PAWN scaffolding as `pawn_sensitivity_analysis.jl`, but:
-- dhw_scenarios restricted to [2, 5, 7, 9, 11]
+- factors are Sobol'-sampled from their distributions (`ADRIA.sample`) rather than crossed
+  over hand-picked levels; only the bounds/levels of each distribution are specified here
+- the seeding option is crossed manually over the Sobol set (it is not a model-spec factor)
 - N_seed split by fixed group weights (N_seed_weights), as in
   `robustness_analysis_static_options.jl`, instead of an equal 1/5 split
-- seeding_devices_per_m2 and a_adapt are varied factors ([1, 5, 10])
-- a counterfactual (no-seeding) scenario is added per dhw
+- seeding_devices_per_m2 and a_adapt are varied factors
+- a counterfactual (no-seeding) scenario is added per dhw member
 - the PAWN output metric is the local, counterfactual-relative tail metric used in
   `robustness_analysis_static_options.jl`: for each of cumulative cover, years above 20%
   cover, and cumulative evenness, the per-reef delta (option − counterfactual) is reduced
@@ -30,12 +32,14 @@ using GeoMakie, GraphMakie, CairoMakie
 seed_years = 20
 tail_fraction = 0.05
 rcps = ["26", "45", "70"]
-dhw_scenarios = [5, 7, 9, 11]
+n_sobol = 512  # must be a power of 2 (Sobol' sampler requirement)
 
-N_seeds = [1e6, 1e7, 1e8]
-min_locations = [50, 200, 500, 1000]
-seeding_devices = [2, 5, 10]
-a_adapts = [2, 5, 10]
+# Distribution bounds/levels of the sampled factors. dhw_scenario is left at its default
+# category tuple, i.e. every DHW member in the domain.
+N_seed_bounds = (1e6, 1e8)      # total corals per deployment, sampled log-uniformly
+min_loc_bounds = (50.0, 1000.0)
+device_levels = (2.0, 5.0, 10.0)
+a_adapt_bounds = (2.0, 10.0, 0.5)  # (lower, upper, step)
 N_seed_weights = (
     N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0
 )
@@ -48,63 +52,82 @@ dom = ADRIA.load_domain(
 )
 fix_common_parameters!(dom)
 
-# seeding_devices_per_m2 and a_adapt are intentionally NOT fixed here: they are varied.
+ms = ADRIA.model_spec(dom)
+
+# seeding_devices_per_m2, a_adapt, min_iv_locations, N_seed_CA and dhw_scenario are
+# intentionally NOT fixed here: they are the sampled factors.
 ADRIA.fix_factor!(dom; seed_years=seed_years)
 
+# Only N_seed_CA is sampled; it carries the *total* budget and is split into groups below.
+# Its lower bound must stay > 0, otherwise `adjust_samples` treats the row as unseeded and
+# zeroes a_adapt and every seed_* column.
+ADRIA.fix_factor!(dom; N_seed_TA=0, N_seed_CNA=0, N_seed_SM=0, N_seed_LM=0)
+
+# Seed criteria weights are set per option below, so they must not be design dimensions
+ADRIA.fix_factor!(dom, ADRIA.component_params(ms, "SeedCriteriaWeights").fieldname)
+
+ADRIA.set_factor_bounds!(
+    dom;
+    N_seed_CA=(N_seed_bounds..., 50_000.0),
+    min_iv_locations=min_loc_bounds,
+    seeding_devices_per_m2=device_levels,
+    a_adapt=a_adapt_bounds
+)
+
+# Beyond the five sampled factors, the remaining non-constant factors are the inert
+# fog_*/mc_*/shade_*/reactive_*/mcb_deployment_freq group, which `adjust_samples` zeroes out
+# given fogging=0, N_mc_settlers=0, SRM=0 and a periodic seed_strategy.
+ms = ADRIA.model_spec(dom)
+@info "Sobol design dimensions: $(ms[.!ms.is_constant, :fieldname])"
+
 options = ADRIA.analysis.option_seed_preference(; include_weights=true)
+n_opts = nrow(options)
 
 # ── Build scenario table ──────────────────────────────────────────────────────
 
-n_intervention = length(N_seeds) * nrow(options) * length(dhw_scenarios) *
-                 length(min_locations) * length(seeding_devices) * length(a_adapts)
-n_cf = length(dhw_scenarios)  # one counterfactual per dhw
-n_scens = n_intervention + n_cf
+# Every option is paired with the identical Sobol set
+scens = repeat(ADRIA.sample(dom, n_sobol); inner=n_opts)
+scens[!, :option] = repeat(1:n_opts, n_sobol)
 
-scens_base = repeat(ADRIA.sample(dom, 2)[1:1, :], n_scens)
-scens_base[!, :option] = zeros(Int, n_scens)
+# Log-uniform total seeding budget: the sampled value is uniform over a regular grid, so `u`
+# is uniform on [0, 1] and the exponential map is a valid inverse-CDF transform.
+u = (scens.N_seed_CA .- N_seed_bounds[1]) ./ (N_seed_bounds[2] - N_seed_bounds[1])
+N_seed_total = N_seed_bounds[1] .* (N_seed_bounds[2] / N_seed_bounds[1]) .^ u
 
-row = 1
-for N_seed in N_seeds, (opt_idx, option) in enumerate(eachrow(options)),
-    dhw_scenario in dhw_scenarios, min_location in min_locations,
-    device in seeding_devices, a_adapt in a_adapts
+for (group, weight) in pairs(N_seed_weights)
+    scens[!, group] = N_seed_total .* weight
+end
+# NOTE: this bookkeeping column must not contain "N_seed" in its name — `run_model` selects
+# the seeding volume by substring (`ADRIA.jl/src/scenario.jl:909`), so an extra "N_seed*"
+# column silently joins the per-group seed volumes and breaks the run.
+scens[!, :total_deployed_corals] = N_seed_total
 
-    scens_base[row, :N_seed_TA] = N_seed * N_seed_weights.N_seed_TA
-    scens_base[row, :N_seed_CA] = N_seed * N_seed_weights.N_seed_CA
-    scens_base[row, :N_seed_CNA] = N_seed * N_seed_weights.N_seed_CNA
-    scens_base[row, :N_seed_SM] = N_seed * N_seed_weights.N_seed_SM
-    scens_base[row, :N_seed_LM] = N_seed * N_seed_weights.N_seed_LM
-    scens_base[row, :seed_heat_stress] = option[2]
-    scens_base[row, :seed_in_connectivity] = option[3]
-    scens_base[row, :seed_out_connectivity] = option[4]
-    scens_base[row, :seed_depth] = option[5]
-    scens_base[row, :seed_coral_cover] = option[6]
-    scens_base[row, :seed_cluster_diversity] = option[7]
-    scens_base[row, :seed_geographic_separation] = option[8]
-    scens_base[row, :seed_coral_diversity] = option[9]
-    scens_base[row, :dhw_scenario] = dhw_scenario
-    scens_base[row, :min_iv_locations] = min_location
-    scens_base[row, :seeding_devices_per_m2] = device
-    scens_base[row, :a_adapt] = a_adapt
-    scens_base[row, :option] = opt_idx
-    row += 1
+# Assigned by name: both `options` and the model spec derive their criteria from
+# `fieldnames(ADRIA.SeedCriteriaWeights)`, so this stays correct if criteria are added or
+# removed (positional indexing into `options` silently breaks when they are).
+criteria = ADRIA.component_params(ms, "SeedCriteriaWeights").fieldname
+for (row, scen) in enumerate(eachrow(scens))
+    scens[row, criteria] = collect(options[scen.option, criteria])
 end
 
-# Counterfactual (no seeding) — one per dhw. Other seeding parameters
-# (seeding_devices_per_m2, a_adapt, option, min_iv_locations) are left at the base
-# sample value since they are irrelevant with no seeding; these rows are excluded from PAWN.
-for dhw_scenario in dhw_scenarios
-    scens_base[row, :dhw_scenario] = dhw_scenario
-    scens_base[row, :N_seed_TA] = 0
-    scens_base[row, :N_seed_CA] = 0
-    scens_base[row, :N_seed_CNA] = 0
-    scens_base[row, :N_seed_SM] = 0
-    scens_base[row, :N_seed_LM] = 0
-    scens_base[row, :option] = 0
-    row += 1
+# Counterfactual (no seeding) — one per dhw member. dhw_scenario is the only non-intervention
+# factor that varies, so this is a complete set (RCP is crossed by `run_scenarios`). The other
+# seeding parameters (seeding_devices_per_m2, a_adapt, option, min_iv_locations) are left at
+# the first sampled value since they are irrelevant with no seeding; these rows are excluded
+# from PAWN.
+dhw_members = sort(unique(scens.dhw_scenario))
+cf = repeat(scens[1:1, :], length(dhw_members))
+cf[!, :dhw_scenario] = dhw_members
+cf[!, :option] .= 0
+cf[!, :total_deployed_corals] .= 0.0
+for group in keys(N_seed_weights)
+    cf[!, group] .= 0.0
 end
+
+scens = vcat(scens, cf)
 
 # Run one ResultSet per RCP, adding RCP as a factor column, then combine
-rs = ADRIA.run_scenarios(dom, scens_base, rcps)
+rs = ADRIA.run_scenarios(dom, scens, rcps)
 
 # Load scenario
 # path = "Outputs/"
@@ -193,7 +216,7 @@ end
 fig_opts = Dict(:size => (800, 400))
 opts = Dict(
     :factors => [
-        :dhw_scenario, :RCP, :option, :min_iv_locations, :N_seed_TA,
+        :dhw_scenario, :RCP, :option, :min_iv_locations, :total_deployed_corals,
         :seeding_devices_per_m2, :a_adapt
     ],
     :by => :none,

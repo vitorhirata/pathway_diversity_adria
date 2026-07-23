@@ -17,7 +17,7 @@ script in `src/`. Call this right after `ADRIA.load_domain` and before any scrip
 Fixed here:
 - Four full component groups: `FogCriteriaWeights`, `MCCriteriaWeights`, `Coral`,
   `GrowthAcceleration`
-- Environmental: `wave_scenario`
+- Environmental: `wave_scenario`, `cyclone_mortality_scenario`
 - Intervention: `guided` (CoCoSo), `plan_horizon`, and the alternative interventions that are
   switched off (`N_mc_settlers`, `fogging`, `SRM`, `mcb_duration`, `mcb_albedo`)
 - Seeding: `seed_year_start`, `seed_deployment_freq`, `seed_strategy`, `a_adapt_ref`
@@ -39,6 +39,7 @@ function fix_common_parameters!(dom)
     ADRIA.fix_factor!(dom;
         # EnvironmentalLayer
         wave_scenario=1,
+        cyclone_mortality_scenario=0,
         # Intervention
         guided=1,               # CoCoSo
         plan_horizon=5.0,
