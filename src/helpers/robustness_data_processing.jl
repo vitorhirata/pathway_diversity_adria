@@ -354,10 +354,12 @@ end
     join_robustness_diversity(rob_df, pd_df, sel_rcp) -> DataFrame
 
 Pair each (starting option × parameter set) with a robustness value and a pathway-diversity
-value. Robustness is `rob_df.median` (worst-DHW median from [`worst_dhw_robustness`]);
-pathway diversity is the *worst* (minimum over DHW scenarios) value from `pd_df` (an
-options-format table: `option_name, pathway_diversity, N_seed, dhw_scenario, n_locations, rcp`)
-at `sel_rcp`. Returns columns `start_option, N_seed, n_locations, robustness, pathway_diversity`.
+value. Robustness is `rob_df.median` (worst-DHW median from [`worst_dhw_robustness`]), carried
+through with its `min`/`max` spread over that worst DHW's pathway distribution; pathway
+diversity is the *worst* (minimum over DHW scenarios) value from `pd_df` (an options-format
+table: `option_name, pathway_diversity, N_seed, dhw_scenario, n_locations, rcp`) at `sel_rcp`.
+Returns columns `start_option, N_seed, n_locations, robustness, robustness_min, robustness_max,
+pathway_diversity`.
 """
 function join_robustness_diversity(rob_df, pd_df, sel_rcp)
     worst = combine(
@@ -369,10 +371,10 @@ function join_robustness_diversity(rob_df, pd_df, sel_rcp)
     rename!(worst, :option_name => :start_option)
 
     joined = innerjoin(
-        rob_df[:, [:start_option, :N_seed, :n_locations, :median]],
+        rob_df[:, [:start_option, :N_seed, :n_locations, :median, :min, :max]],
         worst; on=[:start_option, :N_seed, :n_locations]
     )
-    rename!(joined, :median => :robustness)
+    rename!(joined, :median => :robustness, :min => :robustness_min, :max => :robustness_max)
     return joined
 end
 

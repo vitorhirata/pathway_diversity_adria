@@ -237,8 +237,10 @@ end
     plot_robustness_vs_diversity(rob_div_df, option_names, option_colors, option_labels, sel_rcp)
 
 Facetted scatter of robustness (y) vs pathway diversity (x), coloured by starting option, one
-panel per parameter set. Panels are gridded so columns = number of locations and rows = number
-of seeds. All panels share the same x scale and the same y scale (limits fixed globally).
+panel per parameter set. Point = median robustness over pathways with min–max whiskers (same
+pattern as [`plot_robustness_param_scatter`]). Panels are gridded so columns = number of
+locations and rows = number of seeds. All panels share the same x scale and the same y scale
+(limits fixed globally, and wide enough to contain the whiskers).
 `rob_div_df` is the output of [`join_robustness_diversity`].
 """
 function plot_robustness_vs_diversity(
@@ -253,7 +255,8 @@ function plot_robustness_vs_diversity(
     # Shared limits: same x scale and same y scale across every panel (with a small margin).
     _pad(lo, hi) = (m = 0.05 * (hi - lo + eps()); (lo - m, hi + m))
     xlims = _pad(extrema(rob_div_df.pathway_diversity)...)
-    ylims = _pad(extrema(rob_div_df.robustness)...)
+    # y range must span the whiskers, not just the median points, so they are never clipped.
+    ylims = _pad(minimum(rob_div_df.robustness_min), maximum(rob_div_df.robustness_max))
 
     fig = Figure(size=(320 * n_c + 220, 260 * n_r + 90))
     for (ri, ns) in enumerate(n_seeds)
@@ -267,13 +270,18 @@ function plot_robustness_vs_diversity(
         ax = Axis(fig[ri, ci];
             limits=(xlims, ylims),
             xlabel=ri == n_r ? "Pathway diversity" : "",
-            ylabel=ci == 1 ? "Robustness (worst-DHW median)" : ""
+            ylabel=ci == 1 ? "Robustness (worst-DHW median, min–max)" : ""
         )
         sub = rob_div_df[(rob_div_df.N_seed .== ns) .& (rob_div_df.n_locations .== nl), :]
         for (o_i, option) in enumerate(option_names)
             r = sub[sub.start_option .== string(option), :]
             isempty(r) && continue
             scatter!(ax, r.pathway_diversity, r.robustness; color=option_colors[o_i], markersize=12)
+            errorbars!(
+                ax, r.pathway_diversity, r.robustness,
+                r.robustness .- r.robustness_min, r.robustness_max .- r.robustness;
+                color=option_colors[o_i], whiskerwidth=6
+            )
         end
     end
 
