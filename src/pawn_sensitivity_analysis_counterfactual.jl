@@ -213,15 +213,16 @@ end
 
 # ── PAWN sensitivity per metric × tail ────────────────────────────────────────
 
-fig_opts = Dict(:size => (800, 400))
+fig_opts = Dict(:size => (800, 450))
 opts = Dict(
     :factors => [
-        :dhw_scenario, :RCP, :option, :min_iv_locations, :total_deployed_corals,
+        :dhw_scenario, :dhw_mean, :RCP, :option, :min_iv_locations, :total_deployed_corals,
         :seeding_devices_per_m2, :a_adapt
     ],
     :by => :none,
     :ytick_labels => [
         "Climate Model",
+        "Mean DHW",
         "RCP",
         "Option",
         "Number of locations",
@@ -253,7 +254,29 @@ filenames = [
     "pawn_cf_cumulative_evenness_worst", "pawn_cf_cumulative_evenness_best"
 ]
 
+"""
+Mean DHW of each ensemble member, per RCP.
+
+`dhw_scenario` is an arbitrary member ID, so PAWN's quantile slices over it group unrelated
+members together and dilute the index. Slicing on mean DHW instead orders the members by
+the heat stress they actually impose. Both are reported.
+
+Computed from the domain rather than `rs.dhw_stats`: `setup_result_store!` builds the per-RCP
+DHW summaries before `run_scenarios` switches RCPs, so every entry there holds the stats of
+whichever RCP the domain was loaded with.
+"""
+dhw_mean_by_rcp = Dict{Int64,Vector{Float64}}()
+for rcp in rcps
+    ADRIA.switch_RCPs!(dom, rcp)
+    # dims: (timesteps, locations, members)
+    dhw_mean_by_rcp[parse(Int64, rcp)] = vec(mean(dom.dhw_scens.data; dims=(1, 2)))
+end
+
 X = rs.inputs[intervention_idxs, :]
+X[!, :dhw_mean] = [
+    dhw_mean_by_rcp[Int64(scen.RCP)][Int64(scen.dhw_scenario)] for scen in eachrow(X)
+]
+
 for (idx, y) in enumerate(metric_ys)
     si = ADRIA.sensitivity.pawn(X, y[intervention_idxs])
     axis_opts[:title] = titles[idx]
