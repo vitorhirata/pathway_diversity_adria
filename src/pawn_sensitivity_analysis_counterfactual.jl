@@ -1,7 +1,6 @@
 #=
 PAWN sensitivity analysis on local, counterfactual-relative tail metrics.
 
-Same PAWN scaffolding as `pawn_sensitivity_analysis.jl`, but:
 - factors are Sobol'-sampled from their distributions (`ADRIA.sample`) rather than crossed
   over hand-picked levels; only the bounds/levels of each distribution are specified here
 - the seeding option is crossed manually over the Sobol set (it is not a model-spec factor)
@@ -9,10 +8,14 @@ Same PAWN scaffolding as `pawn_sensitivity_analysis.jl`, but:
   `robustness_analysis_static_options.jl`, instead of an equal 1/5 split
 - seeding_devices_per_m2 and a_adapt are varied factors
 - a counterfactual (no-seeding) scenario is added per dhw member
-- the PAWN output metric is the local, counterfactual-relative tail metric used in
-  `robustness_analysis_static_options.jl`: for each of cumulative cover, years above 20%
-  cover, and cumulative evenness, the per-reef delta (option − counterfactual) is reduced
-  to the mean of the bottom/top `tail_fraction` of reefs, normalized (worst/best reefs).
+- the PAWN output metrics are counterfactual-relative, at two scales:
+  * local tail metrics, as in `robustness_analysis_static_options.jl`: for each of cumulative
+    cover, years above 20% cover, and cumulative evenness, the per-reef delta
+    (option − counterfactual) is reduced to the mean of the bottom/top `tail_fraction` of
+    reefs, normalized (worst/best reefs)
+  * GBR-scale metrics: total absolute cover, relative shelter volume, relative juveniles and
+    coral evenness, over all locations, reduced to their time mean and expressed as the
+    fractional change against the counterfactual
 
 Varied factors:
 - dhw_scenario
@@ -211,6 +214,34 @@ for s in intervention_idxs
         delta_tail_ratio(opt_fd, cf_fd; tail_fraction=tail_fraction)
 end
 
+# ── GBR-scale metrics, counterfactual-relative ────────────────────────────────
+
+"""
+Fractional change of a per-scenario scalar against its matched counterfactual,
+`(option − counterfactual) / counterfactual`. Counterfactual entries are left as NaN and are
+dropped before PAWN.
+"""
+function cf_relative_change(scen_metric::AbstractVector)::Vector{Float64}
+    out = fill(NaN, length(scen_metric))
+    for s in intervention_idxs
+        cf_s = cf_lookup[(rs.inputs.dhw_scenario[s], rs.inputs.RCP[s])]
+        out[s] = (scen_metric[s] - scen_metric[cf_s]) / scen_metric[cf_s]
+    end
+    return out
+end
+
+# Scenario-level metrics over all locations, reduced to their mean over time.
+y_s_tac = cf_relative_change(
+    vec(mean(ADRIA.metrics.scenario_total_cover(rs); dims=:timesteps))
+)
+y_s_rsv = cf_relative_change(vec(mean(ADRIA.metrics.scenario_rsv(rs); dims=:timesteps)))
+y_s_juves = cf_relative_change(
+    vec(mean(ADRIA.metrics.scenario_relative_juveniles(rs); dims=:timesteps))
+)
+y_s_even = cf_relative_change(
+    vec(mean(ADRIA.metrics.scenario_evenness(rs); dims=:timesteps))
+)
+
 # ── PAWN sensitivity per metric × tail ────────────────────────────────────────
 
 fig_opts = Dict(:size => (800, 450))
@@ -241,17 +272,22 @@ axis_opts = Dict(
 metric_ys = [
     y_tac_bot, y_tac_top,
     y_nyrs_bot, y_nyrs_top,
-    y_fd_bot, y_fd_top
+    y_fd_bot, y_fd_top,
+    y_s_tac, y_s_rsv, y_s_juves, y_s_even
 ]
 titles = [
     "Cumulative cover (worst reefs)", "Cumulative cover (best reefs)",
     "Years above 20% cover (worst reefs)", "Years above 20% cover (best reefs)",
-    "Cumulative evenness (worst reefs)", "Cumulative evenness (best reefs)"
+    "Cumulative evenness (worst reefs)", "Cumulative evenness (best reefs)",
+    "Total absolute cover (GBR)", "Relative shelter volume (GBR)",
+    "Relative juveniles (GBR)", "Coral evenness (GBR)"
 ]
 filenames = [
     "pawn_cf_cumulative_cover_worst", "pawn_cf_cumulative_cover_best",
     "pawn_cf_years_above_worst", "pawn_cf_years_above_best",
-    "pawn_cf_cumulative_evenness_worst", "pawn_cf_cumulative_evenness_best"
+    "pawn_cf_cumulative_evenness_worst", "pawn_cf_cumulative_evenness_best",
+    "pawn_cf_scenario_total_cover", "pawn_cf_scenario_rsv",
+    "pawn_cf_scenario_juveniles", "pawn_cf_scenario_evenness"
 ]
 
 """
