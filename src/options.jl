@@ -61,18 +61,15 @@ ADRIA.fix_factor!(dom;
 )
 
 options = ADRIA.analysis.option_seed_preference(; include_weights=true)
+
+# Assigned by name: both `options` and the model spec derive their criteria from
+# `fieldnames(ADRIA.SeedCriteriaWeights)`, so this stays correct if criteria are added or
+# removed (positional indexing into `options` silently breaks when they are).
+criteria = ADRIA.component_params(ADRIA.model_spec(dom), "SeedCriteriaWeights").fieldname
+
 scens_block = []
 for option in eachrow(options)
-    ADRIA.fix_factor!(dom;
-        seed_heat_stress=option[2],
-        seed_in_connectivity=option[3],
-        seed_out_connectivity=option[4],
-        seed_depth=option[5],
-        seed_coral_cover=option[6],
-        seed_cluster_diversity=option[7],
-        seed_geographic_separation=option[8],
-        seed_coral_diversity=option[9]
-    )
+    ADRIA.fix_factor!(dom; (criteria .=> collect(option[criteria]))...)
     scen = ADRIA.sample(dom, 2)[1:1, :]
     push!(scens_block, scen)
 end

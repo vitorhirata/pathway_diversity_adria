@@ -35,6 +35,11 @@ N_seed_weights = (
 options = ADRIA.analysis.option_seed_preference(; include_weights=true)
 dhw_scenarios = 1:11
 
+# Assigned by name: both `options` and the model spec derive their criteria from
+# `fieldnames(ADRIA.SeedCriteriaWeights)`, so this stays correct if criteria are added or
+# removed (positional indexing into `options` silently breaks when they are).
+criteria = ADRIA.component_params(ADRIA.model_spec(dom), "SeedCriteriaWeights").fieldname
+
 n_scens = length(N_seeds) * nrow(options) * length(dhw_scenarios) * length(min_locations)
 scens_base = repeat(ADRIA.sample(dom, 2)[1:1, :], n_scens)
 scens_base[!, :option] = zeros(Int, n_scens)
@@ -48,14 +53,7 @@ for N_seed in N_seeds, (opt_idx, option) in enumerate(eachrow(options)),
     scens_base[row, :N_seed_CNA] = N_seed * N_seed_weights.N_seed_CNA
     scens_base[row, :N_seed_SM] = N_seed * N_seed_weights.N_seed_SM
     scens_base[row, :N_seed_LM] = N_seed * N_seed_weights.N_seed_LM
-    scens_base[row, :seed_heat_stress] = option[2]
-    scens_base[row, :seed_in_connectivity] = option[3]
-    scens_base[row, :seed_out_connectivity] = option[4]
-    scens_base[row, :seed_depth] = option[5]
-    scens_base[row, :seed_coral_cover] = option[6]
-    scens_base[row, :seed_cluster_diversity] = option[7]
-    scens_base[row, :seed_geographic_separation] = option[8]
-    scens_base[row, :seed_coral_diversity] = option[9]
+    scens_base[row, criteria] = collect(option[criteria])
     scens_base[row, :dhw_scenario] = dhw_scenario
     scens_base[row, :min_iv_locations] = min_location
     scens_base[row, :option] = opt_idx

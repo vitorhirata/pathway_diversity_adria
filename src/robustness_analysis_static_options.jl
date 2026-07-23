@@ -61,6 +61,11 @@ ADRIA.fix_factor!(dom;
 
 options = ADRIA.analysis.option_seed_preference(; include_weights=true)
 
+# Assigned by name: both `options` and the model spec derive their criteria from
+# `fieldnames(ADRIA.SeedCriteriaWeights)`, so this stays correct if criteria are added or
+# removed (positional indexing into `options` silently breaks when they are).
+criteria = ADRIA.component_params(ADRIA.model_spec(dom), "SeedCriteriaWeights").fieldname
+
 # ── Build scenario table (direct column assignment, pawn pattern) ─────────────
 
 n_nseed = length(N_seed_totals)
@@ -85,14 +90,7 @@ for N_seed_total in N_seed_totals, min_iv in min_iv_locations_list, dhw in dhw_s
         scens[row, :N_seed_CNA] = N_seed_total * N_seed_weights.N_seed_CNA
         scens[row, :N_seed_SM] = N_seed_total * N_seed_weights.N_seed_SM
         scens[row, :N_seed_LM] = N_seed_total * N_seed_weights.N_seed_LM
-        scens[row, :seed_heat_stress] = option[2]
-        scens[row, :seed_in_connectivity] = option[3]
-        scens[row, :seed_out_connectivity] = option[4]
-        scens[row, :seed_depth] = option[5]
-        scens[row, :seed_coral_cover] = option[6]
-        scens[row, :seed_cluster_diversity] = option[7]
-        scens[row, :seed_geographic_separation] = option[8]
-        scens[row, :seed_coral_diversity] = option[9]
+        scens[row, criteria] = collect(option[criteria])
         row += 1
     end
 
