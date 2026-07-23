@@ -253,16 +253,16 @@ end
 """
     pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_fraction, seed_years)
 
-Single scalar summarising pathway (scenario) `s`: the mean over the three metrics of the net
-tail ratio `top − |bottom|` (the third value returned by [`delta_tail_ratio`]). Metric 1
+Single scalar summarising pathway (scenario) `s`: the mean of the six tail ratios (bottom and
+top of each of the three metrics, as returned by [`delta_tail_ratio`]). Metric 1
 (`n_yrs_above`) uses `norm=seed_years` as its zero-guard, matching Figures A/B; metrics 2 and 3
 use the default counterfactual-mean norm.
 """
 function pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_fraction, seed_years)
-    _, _, r1 = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction, norm=seed_years)
-    _, _, r2 = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction)
-    _, _, r3 = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction)
-    return mean((r1, r2, r3))
+    b1, t1, _ = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction, norm=seed_years)
+    b2, t2, _ = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction)
+    b3, t3, _ = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction)
+    return mean((b1, b2, b3, t1, t2, t3))
 end
 
 """
