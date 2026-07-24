@@ -107,9 +107,9 @@ plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, sel_
 
 # ── Aggregated robustness across DHW scenarios and parameter sets ─────────────
 #
-#   Per pathway, collapse the 6 tail ratios into one scalar (mean of the 6 bottom/top ratios).
-#   Then, for each (starting option × parameter set), take the median robustness over pathways per
-#   DHW and keep the worst (smallest-median) DHW; report that DHW's median/min/max over pathways.
+#   Per pathway, collapse the 6 tail ratios into one scalar (mean of the 6 bottom/top ratios) and
+#   keep its worst (smallest) value across DHW scenarios. Then, for each (starting option ×
+#   parameter set), report P10 / median / P90 of that worst-case robustness over pathways.
 
 dhw_scenarios = [2, 7, 10]  # all DHW members present in the run
 param_sets = detect_param_sets(rs, sel_rcp; N_seed_weights)

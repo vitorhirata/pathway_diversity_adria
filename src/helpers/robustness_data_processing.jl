@@ -294,16 +294,58 @@ function detect_param_sets(rs, sel_rcp; N_seed_weights)
 end
 
 """
+    pathway_worst_dhw_robustness(rs, option_names, opt_metric_mats, ps; dhw_scenarios, sel_rcp,
+        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction)
+        -> Dict(option => Dict(option_ts => Float64))
+
+Worst-case robustness of every *individual* pathway of parameter set `ps`, grouped by starting
+option. A pathway is identified by its `option_ts` code and its value is the minimum
+[`pathway_robustness`] across the DHW scenarios in which it occurs, so the DHW reduction happens
+per pathway and is independent of any starting-option aggregation.
+"""
+function pathway_worst_dhw_robustness(
+    rs, option_names, opt_metric_mats, ps;
+    dhw_scenarios, sel_rcp,
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+)
+    K = eltype(rs.inputs.option_ts)
+    worst = Dict(option => Dict{K,Float64}() for option in option_names)
+
+    for sel_dhw in dhw_scenarios
+        pathways = group_pathways_by_starting_option(
+            rs, option_names;
+            sel_rcp, sel_dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
+            seed_year_start, seed_years, pd_frequency, N_seed_weights
+        )
+        cf_idx = find_counterfactual(rs, sel_dhw, sel_rcp)
+        cf_full = (
+            opt_metric_mats[1][:, cf_idx],
+            opt_metric_mats[2][:, cf_idx],
+            opt_metric_mats[3][:, cf_idx]
+        )
+
+        for option in option_names
+            d = worst[option]
+            for s in pathways[option]
+                key = rs.inputs.option_ts[s]
+                rob = pathway_robustness(opt_metric_mats, cf_full, s; tail_fraction, seed_years)
+                d[key] = haskey(d, key) ? min(d[key], rob) : rob
+            end
+        end
+    end
+
+    return worst
+end
+
+"""
     worst_dhw_robustness(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets, sel_rcp,
         seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction) -> DataFrame
 
-For each (starting option × parameter set), compute the per-pathway [`pathway_robustness`] under
-each DHW scenario, and keep the DHW that yields the *smallest* median robustness (worst case).
-The reported `median`/`min`/`max` are all over that worst DHW's pathway distribution.
+For each (starting option × parameter set), summarise the per-pathway worst-over-DHW robustness
+([`pathway_worst_dhw_robustness`]) with its P10, median and P90 over pathways.
 
-Returns a tidy table with columns
-`start_option, N_seed, n_locations, worst_dhw, median, min, max`. Options with no pathways in a
-parameter set are skipped.
+Returns a tidy table with columns `start_option, N_seed, n_locations, p10, median, p90`.
+Options with no pathways in a parameter set are skipped.
 """
 function worst_dhw_robustness(
     rs, option_names, opt_metric_mats;
@@ -311,48 +353,23 @@ function worst_dhw_robustness(
     seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
 )
     df = DataFrame(;
-        start_option=String[], N_seed=Float64[], n_locations=Int[], worst_dhw=Int[],
-        median=Float64[], min=Float64[], max=Float64[]
+        start_option=String[], N_seed=Float64[], n_locations=Int[],
+        p10=Float64[], median=Float64[], p90=Float64[]
     )
 
     for ps in param_sets
-        # Per starting option, track the worst (smallest-median) DHW seen so far.
-        best = Dict{Any,Any}(option => nothing for option in option_names)
-
-        for sel_dhw in dhw_scenarios
-            pathways = group_pathways_by_starting_option(
-                rs, option_names;
-                sel_rcp, sel_dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
-                seed_year_start, seed_years, pd_frequency, N_seed_weights
-            )
-            cf_idx = find_counterfactual(rs, sel_dhw, sel_rcp)
-            cf_full = (
-                opt_metric_mats[1][:, cf_idx],
-                opt_metric_mats[2][:, cf_idx],
-                opt_metric_mats[3][:, cf_idx]
-            )
-
-            for option in option_names
-                idxs = pathways[option]
-                isempty(idxs) && continue
-                robs = [
-                    pathway_robustness(opt_metric_mats, cf_full, s; tail_fraction, seed_years)
-                    for s in idxs
-                ]
-                med = median(robs)
-                if isnothing(best[option]) || med < best[option].median
-                    best[option] = (
-                        median=med, min=minimum(robs), max=maximum(robs), dhw=sel_dhw
-                    )
-                end
-            end
-        end
+        worst = pathway_worst_dhw_robustness(
+            rs, option_names, opt_metric_mats, ps;
+            dhw_scenarios, sel_rcp,
+            seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+        )
 
         for option in option_names
-            b = best[option]
-            isnothing(b) && continue
+            robs = collect(values(worst[option]))
+            isempty(robs) && continue
             push!(df, (
-                string(option), ps.N_seed, ps.n_locations, b.dhw, b.median, b.min, b.max
+                string(option), ps.N_seed, ps.n_locations,
+                quantile(robs, 0.1), median(robs), quantile(robs, 0.9)
             ))
         end
     end
@@ -364,11 +381,11 @@ end
     join_robustness_diversity(rob_df, pd_df, sel_rcp) -> DataFrame
 
 Pair each (starting option × parameter set) with a robustness value and a pathway-diversity
-value. Robustness is `rob_df.median` (worst-DHW median from [`worst_dhw_robustness`]), carried
-through with its `min`/`max` spread over that worst DHW's pathway distribution; pathway
+value. Robustness is `rob_df.median` (median of the per-pathway worst-over-DHW robustness from
+[`worst_dhw_robustness`]), carried through with its P10/P90 spread over pathways; pathway
 diversity is the *worst* (minimum over DHW scenarios) value from `pd_df` (an options-format
 table: `option_name, pathway_diversity, N_seed, dhw_scenario, n_locations, rcp`) at `sel_rcp`.
-Returns columns `start_option, N_seed, n_locations, robustness, robustness_min, robustness_max,
+Returns columns `start_option, N_seed, n_locations, robustness, robustness_p10, robustness_p90,
 pathway_diversity`.
 """
 function join_robustness_diversity(rob_df, pd_df, sel_rcp)
@@ -381,10 +398,10 @@ function join_robustness_diversity(rob_df, pd_df, sel_rcp)
     rename!(worst, :option_name => :start_option)
 
     joined = innerjoin(
-        rob_df[:, [:start_option, :N_seed, :n_locations, :median, :min, :max]],
+        rob_df[:, [:start_option, :N_seed, :n_locations, :median, :p10, :p90]],
         worst; on=[:start_option, :N_seed, :n_locations]
     )
-    rename!(joined, :median => :robustness, :min => :robustness_min, :max => :robustness_max)
+    rename!(joined, :median => :robustness, :p10 => :robustness_p10, :p90 => :robustness_p90)
     return joined
 end
 
@@ -416,41 +433,21 @@ function top_robustness_pathways(
     end
 
     for ps in param_sets
+        worst = pathway_worst_dhw_robustness(
+            rs, option_names, opt_metric_mats, ps;
+            dhw_scenarios, sel_rcp,
+            seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+        )
+
         for option in option_names
-            # sequence string => worst (min) robustness across the DHW scenarios it occurs in
-            worst_rob = Dict{String,Float64}()
-
-            for sel_dhw in dhw_scenarios
-                pathways = group_pathways_by_starting_option(
-                    rs, option_names;
-                    sel_rcp, sel_dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
-                    seed_year_start, seed_years, pd_frequency, N_seed_weights
-                )
-                idxs = pathways[option]
-                isempty(idxs) && continue
-
-                cf_idx = find_counterfactual(rs, sel_dhw, sel_rcp)
-                cf_full = (
-                    opt_metric_mats[1][:, cf_idx],
-                    opt_metric_mats[2][:, cf_idx],
-                    opt_metric_mats[3][:, cf_idx]
-                )
-
-                for s in idxs
-                    seq = compact_pathway(
-                        rs.inputs.option_ts[s], seed_year_start, seed_years, pd_frequency, max_time
-                    )
-                    key = join(string.(seq), " > ")
-                    rob = pathway_robustness(opt_metric_mats, cf_full, s; tail_fraction, seed_years)
-                    worst_rob[key] = haskey(worst_rob, key) ? min(worst_rob[key], rob) : rob
-                end
-            end
-
-            ranked = sort(collect(worst_rob); by=last, rev=true)
+            ranked = sort(collect(worst[option]); by=last, rev=true)
             tops = fill("", n_top)
-            for (i, (key, _)) in enumerate(ranked)
+            for (i, (option_ts, _)) in enumerate(ranked)
                 i > n_top && break
-                tops[i] = key
+                seq = compact_pathway(
+                    option_ts, seed_year_start, seed_years, pd_frequency, max_time
+                )
+                tops[i] = join(string.(seq), " > ")
             end
             push!(df, (string(option), ps.N_seed, ps.n_locations, tops...))
         end
