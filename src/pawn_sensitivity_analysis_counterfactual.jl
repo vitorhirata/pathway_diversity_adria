@@ -1,5 +1,5 @@
 #=
-PAWN sensitivity analysis on local, counterfactual-relative tail metrics.
+PAWN sensitivity analysis on local tail metrics and GBR-scale metrics.
 
 - factors are Sobol'-sampled from their distributions (`ADRIA.sample`) rather than crossed
   over hand-picked levels; only the bounds/levels of each distribution are specified here
@@ -8,14 +8,16 @@ PAWN sensitivity analysis on local, counterfactual-relative tail metrics.
   `robustness_analysis_static_options.jl`, instead of an equal 1/5 split
 - seeding_devices_per_m2 and a_adapt are varied factors
 - a counterfactual (no-seeding) scenario is added per dhw member
-- the PAWN output metrics are counterfactual-relative, at two scales:
-  * local tail metrics, as in `robustness_analysis_static_options.jl`: for each of cumulative
-    cover, years above 20% cover, and cumulative evenness, the per-reef delta
-    (option − counterfactual) is reduced to the mean of the bottom/top `tail_fraction` of
-    reefs, normalized (worst/best reefs)
+- the PAWN output metrics are, at two scales:
+  * local tail metrics, counterfactual-relative, as in
+    `robustness_analysis_static_options.jl`: for each of cumulative cover, years above 20%
+    cover, and cumulative evenness, the per-reef delta (option − counterfactual) is reduced
+    to the mean of the bottom/top `tail_fraction` of reefs, normalized (worst/best reefs)
   * GBR-scale metrics: total absolute cover, relative shelter volume, relative juveniles and
-    coral evenness, over all locations, reduced to their time mean and expressed as the
-    fractional change against the counterfactual
+    coral evenness, over all locations, reduced to their time mean. Reported twice: raw, and
+    as the fractional change against the counterfactual. Both drop the no-seeding scenarios
+    before PAWN, so the raw version measures how the factors move the absolute state and the
+    relative version how they move the benefit of seeding
 
 Varied factors:
 - dhw_scenario
@@ -214,7 +216,7 @@ for s in intervention_idxs
         delta_tail_ratio(opt_fd, cf_fd; tail_fraction=tail_fraction)
 end
 
-# ── GBR-scale metrics, counterfactual-relative ────────────────────────────────
+# ── GBR-scale metrics, raw and counterfactual-relative ────────────────────────
 
 """
 Fractional change of a per-scenario scalar against its matched counterfactual,
@@ -230,17 +232,17 @@ function cf_relative_change(scen_metric::AbstractVector)::Vector{Float64}
     return out
 end
 
-# Scenario-level metrics over all locations, reduced to their mean over time.
-y_s_tac = cf_relative_change(
-    vec(mean(ADRIA.metrics.scenario_total_cover(rs); dims=:timesteps))
-)
-y_s_rsv = cf_relative_change(vec(mean(ADRIA.metrics.scenario_rsv(rs); dims=:timesteps)))
-y_s_juves = cf_relative_change(
-    vec(mean(ADRIA.metrics.scenario_relative_juveniles(rs); dims=:timesteps))
-)
-y_s_even = cf_relative_change(
-    vec(mean(ADRIA.metrics.scenario_evenness(rs); dims=:timesteps))
-)
+# Scenario-level metrics over all locations, reduced to their mean over time. These are the
+# raw PAWN outputs; the no-seeding scenarios are dropped downstream by `intervention_idxs`.
+y_s_tac_raw = vec(mean(ADRIA.metrics.scenario_total_cover(rs); dims=:timesteps))
+y_s_rsv_raw = vec(mean(ADRIA.metrics.scenario_rsv(rs); dims=:timesteps))
+y_s_juves_raw = vec(mean(ADRIA.metrics.scenario_relative_juveniles(rs); dims=:timesteps))
+y_s_even_raw = vec(mean(ADRIA.metrics.scenario_evenness(rs); dims=:timesteps))
+
+y_s_tac = cf_relative_change(y_s_tac_raw)
+y_s_rsv = cf_relative_change(y_s_rsv_raw)
+y_s_juves = cf_relative_change(y_s_juves_raw)
+y_s_even = cf_relative_change(y_s_even_raw)
 
 # ── PAWN sensitivity per metric × tail ────────────────────────────────────────
 
@@ -273,21 +275,26 @@ metric_ys = [
     y_tac_bot, y_tac_top,
     y_nyrs_bot, y_nyrs_top,
     y_fd_bot, y_fd_top,
-    y_s_tac, y_s_rsv, y_s_juves, y_s_even
+    y_s_tac, y_s_rsv, y_s_juves, y_s_even,
+    y_s_tac_raw, y_s_rsv_raw, y_s_juves_raw, y_s_even_raw
 ]
 titles = [
     "Cumulative cover (worst reefs)", "Cumulative cover (best reefs)",
     "Years above 20% cover (worst reefs)", "Years above 20% cover (best reefs)",
     "Cumulative evenness (worst reefs)", "Cumulative evenness (best reefs)",
     "Total absolute cover (GBR)", "Relative shelter volume (GBR)",
-    "Relative juveniles (GBR)", "Coral evenness (GBR)"
+    "Relative juveniles (GBR)", "Coral evenness (GBR)",
+    "Total absolute cover (GBR, raw)", "Relative shelter volume (GBR, raw)",
+    "Relative juveniles (GBR, raw)", "Coral evenness (GBR, raw)"
 ]
 filenames = [
     "pawn_cf_cumulative_cover_worst", "pawn_cf_cumulative_cover_best",
     "pawn_cf_years_above_worst", "pawn_cf_years_above_best",
     "pawn_cf_cumulative_evenness_worst", "pawn_cf_cumulative_evenness_best",
     "pawn_cf_scenario_total_cover", "pawn_cf_scenario_rsv",
-    "pawn_cf_scenario_juveniles", "pawn_cf_scenario_evenness"
+    "pawn_cf_scenario_juveniles", "pawn_cf_scenario_evenness",
+    "pawn_raw_scenario_total_cover", "pawn_raw_scenario_rsv",
+    "pawn_raw_scenario_juveniles", "pawn_raw_scenario_evenness"
 ]
 
 """
