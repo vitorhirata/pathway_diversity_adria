@@ -189,14 +189,18 @@ end
 # ── Pathway grouping (pathways analysis) ──────────────────────────────────────
 
 """
-    pathway_starting_option(option_ts, seed_year_start, seed_years, pd_frequency, max_time)
+    compact_pathway(option_ts, seed_year_start, seed_years, pd_frequency, max_time) -> Vector
 
-The option active at `seed_year_start` for a pathway encoded as `option_ts`.
+The per-block option sequence of a pathway: one option per `pd_frequency`-year decision block
+within the seeding window, dropping the `:nothing` padding outside `seed_years`. Length is
+`seed_years ÷ pd_frequency` (e.g. `[:heat_stress, :balanced, :functional_diversity, :heat_stress]`).
 """
-function pathway_starting_option(option_ts, seed_year_start, seed_years, pd_frequency, max_time)
+function compact_pathway(option_ts, seed_year_start, seed_years, pd_frequency, max_time)
+    number_changes = seed_years ÷ pd_frequency
+    decision_steps = [seed_year_start + (k - 1) * pd_frequency for k in 1:number_changes]
     return ADRIA.analysis.decode_option_ts(
         option_ts, seed_year_start, seed_years, pd_frequency, max_time
-    )[seed_year_start]
+    )[decision_steps]
 end
 
 """
@@ -205,6 +209,9 @@ end
 
 Scenario indices of the representative parameter combo, grouped by starting option.
 Returns a `Dict(option => Vector{Int})`.
+
+Pathways that pause seeding — `:nothing` in *any* decision block, starting block included — are
+excluded: the robustness analysis compares continuously-seeded pathways only.
 """
 function group_pathways_by_starting_option(
     rs, option_names; sel_rcp, sel_dhw, sel_N_seed, sel_n_locations,
@@ -219,13 +226,16 @@ function group_pathways_by_starting_option(
         rs.inputs.RCP .== sel_rcp
     combo_idxs = findall(combo_mask)
 
+    seqs = Dict(
+        i => compact_pathway(
+            rs.inputs.option_ts[i], seed_year_start, seed_years, pd_frequency, max_time
+        )
+        for i in combo_idxs
+    )
+    seeded_idxs = [i for i in combo_idxs if !any(==(:nothing), seqs[i])]
+
     return Dict(
-        option => [
-            i for i in combo_idxs
-            if pathway_starting_option(
-                rs.inputs.option_ts[i], seed_year_start, seed_years, pd_frequency, max_time
-            ) == option
-        ]
+        option => [i for i in seeded_idxs if seqs[i][1] == option]
         for option in option_names
     )
 end
@@ -379,21 +389,6 @@ function join_robustness_diversity(rob_df, pd_df, sel_rcp)
 end
 
 # ── Top robustness pathways (pathways analysis) ────────────────────────────────
-
-"""
-    compact_pathway(option_ts, seed_year_start, seed_years, pd_frequency, max_time) -> Vector
-
-The per-block option sequence of a pathway: one option per `pd_frequency`-year decision block
-within the seeding window, dropping the `:nothing` padding outside `seed_years`. Length is
-`seed_years ÷ pd_frequency` (e.g. `[:heat_stress, :balanced, :functional_diversity, :heat_stress]`).
-"""
-function compact_pathway(option_ts, seed_year_start, seed_years, pd_frequency, max_time)
-    number_changes = seed_years ÷ pd_frequency
-    decision_steps = [seed_year_start + (k - 1) * pd_frequency for k in 1:number_changes]
-    return ADRIA.analysis.decode_option_ts(
-        option_ts, seed_year_start, seed_years, pd_frequency, max_time
-    )[decision_steps]
-end
 
 """
     top_robustness_pathways(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets,
