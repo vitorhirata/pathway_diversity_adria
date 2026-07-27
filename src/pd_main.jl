@@ -130,7 +130,7 @@ param_rcp = [(param, rcp) for param in params for rcp in rcps]
 
 # Per-option pathway diversity table, pre-allocated with all params/rcp/option rows
 n_rows = length(param_rcp) * n_options
-options = DataFrame(;
+pd_df = DataFrame(;
     option_name=Vector{String}(undef, n_rows),
     pathway_diversity=zeros(n_rows),
     N_seed=Vector{Int64}(undef, n_rows),
@@ -141,11 +141,11 @@ options = DataFrame(;
 for (block, (param, rcp)) in enumerate(param_rcp)
     base = (block - 1) * n_options
     for (i, option) in enumerate(option_names)
-        options.option_name[base + i] = string(option)
-        options.N_seed[base + i] = Int64(param[1])
-        options.dhw_scenario[base + i] = Int64(param[3])
-        options.n_locations[base + i] = Int64(param[2])
-        options.rcp[base + i] = rcp
+        pd_df.option_name[base + i] = string(option)
+        pd_df.N_seed[base + i] = Int64(param[1])
+        pd_df.dhw_scenario[base + i] = Int64(param[3])
+        pd_df.n_locations[base + i] = Int64(param[2])
+        pd_df.rcp[base + i] = rcp
     end
 end
 
@@ -181,18 +181,21 @@ for (block, (param, rcp)) in enumerate(param_rcp)
     for (i, option) in enumerate(option_names)
         mask = [ts[seed_year_start] == option for ts in scenario_result.decoded_ts]
         probs = scenario_result.probability[mask]
-        options.pathway_diversity[base + i] = sum(ADRIA.analysis._entropy.(probs))
+        pd_df.pathway_diversity[base + i] = sum(ADRIA.analysis._entropy.(probs))
     end
 end
 
-CSV.write(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), options)
+CSV.write(joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), pd_df)
 CSV.write(
     joinpath(pd_config["plot_output_path"], "scenario_probabilities.csv"), scenario_probs
 )
 
-options = CSV.read(
+pd_df = CSV.read(
     joinpath(pd_config["plot_output_path"], "pathway_diversity.csv"), DataFrame
 )
+# Combine two simulations by stacking rows
+#pd_df = vcat(pd_df, pd_df2)
+
 scenario_probs = CSV.read(
     joinpath(pd_config["plot_output_path"], "scenario_probabilities.csv"), DataFrame
 )
@@ -200,15 +203,15 @@ scenario_probs = CSV.read(
 scenario_probs = filter(!iszero, scenario_probs)
 
 
-min_pd = floor(minimum(options.pathway_diversity) * 0.98; digits=1)
-max_pd = ceil(maximum(options.pathway_diversity) * 1.02; digits=1)
+min_pd = floor(minimum(pd_df.pathway_diversity) * 0.98; digits=1)
+max_pd = ceil(maximum(pd_df.pathway_diversity) * 1.02; digits=1)
 
-unique_options = unique(options.option_name)
+unique_options = unique(pd_df.option_name)
 option_map = Dict(opt => i for (i, opt) in enumerate(unique_options))
 
 # seed plot
-option_fix_rcp = options[
-    options.rcp .== 45,
+option_fix_rcp = pd_df[
+    pd_df.rcp .== 45,
     [:option_name, :pathway_diversity, :dhw_scenario, :N_seed, :n_locations]
 ]
 option_fix_rcp.seed =
@@ -569,7 +572,7 @@ save(joinpath(pd_config["plot_output_path"], "lockin_scores.png"), fig)
 # worst (minimum) pathway diversity across DHW scenarios. Scatter: x = parameter set,
 # y = pathway diversity, colour = starting option, one line linking each option across sets.
 
-pd_rcp45 = options[options.rcp .== 45, :]
+pd_rcp45 = pd_df[pd_df.rcp .== 45, :]
 worst_pd = combine(
     groupby(pd_rcp45, [:option_name, :N_seed, :n_locations])
 ) do subdf

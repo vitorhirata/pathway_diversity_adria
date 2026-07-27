@@ -119,6 +119,9 @@ rob_df = worst_dhw_robustness(
     dhw_scenarios, param_sets, sel_rcp,
     seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
 )
+CSV.write(joinpath(pd_config["plot_output_path"], "robustness.csv"), rob_df)
+# Combine two simulations by stacking rows
+#rob_df = vcat(rob_df, rob_df2)
 
 plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
 
