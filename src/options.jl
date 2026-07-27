@@ -19,7 +19,7 @@ using GeoMakie, GraphMakie, CairoMakie, NaturalEarth
 
 RCP = "45"
 seed_years = 20
-dhw_scenarios = [7, 10]
+dhw_scenarios = [2, 7]
 n_dhw = length(dhw_scenarios)
 n_scens_per_dhw = 7          # 5 options + unguided + counterfactual
 n_options = n_scens_per_dhw - 1  # intervention scenarios (options + unguided)
@@ -48,7 +48,7 @@ ADRIA.fix_factor!(dom;
     # Baseline only; every scenario row gets its block's dhw_scenario assigned below.
     dhw_scenario=dhw_scenarios[1],
     # Intervention parameters
-    min_iv_locations=200,
+    min_iv_locations=300,
     # Seeding parameters
     seed_years=seed_years,
     seeding_devices_per_m2=5,
@@ -368,28 +368,103 @@ total_seeds = Array(
         dims=(:timesteps, :coral_id)
     )
 )  # (n_locs, n_dhw * n_options), column iv_col(d, o)
-#seed_colorrange = (0.0, Float64(maximum(total_seeds)))
-seed_colorrange = (0.0, 1.2e7)
+seed_colorrange = (0.0, 1e6)
+#seed_colorrange = (0.0, 1.2e7)
 
-for (opt_i, scen_name) in enumerate(scenario_names)
-    fig_seeds = panel_map_figure(
-        d -> begin
-            has_seeds = total_seeds[:, iv_col(d, opt_i)] .> 0
-            (all_centroids[has_seeds], total_seeds[has_seeds, iv_col(d, opt_i)])
-        end,
-        n_dhw;
-        title_fn=d -> "Total deployed coral per location\n$scen_name — $(dhw_model_names[d])",
-        cbar_label="Total deployed coral",
+"""
+    plot_total_seeds(total_seeds, scenario_names, all_centroids; seeds_dhw, n_seed_cols,
+                     colorrange, colgap, rowgap, panel_height)
+
+Grid of GBR maps of total deployed coral per location, one panel per option (title = option
+name), all sharing a single colorbar, for a single DHW member `seeds_dhw`.
+
+Panel cells are sized to the GBR map's own aspect ratio so there is no whitespace baked into
+each axis; `colgap`/`rowgap` (in px) then set the actual spacing between panels.
+"""
+function plot_total_seeds(
+    total_seeds,
+    scenario_names,
+    all_centroids;
+    seeds_dhw=2,
+    n_seed_cols=3,
+    colorrange=(0.0, Float64(maximum(total_seeds))),
+    colgap=6,
+    rowgap=6,
+    panel_height=380
+)
+    n_rows = cld(length(scenario_names), n_seed_cols)
+    fig = Figure()
+    for (opt_i, scen_name) in enumerate(scenario_names)
+        row = cld(opt_i, n_seed_cols)
+        col = mod1(opt_i, n_seed_cols)
+        ax = GeoAxis(
+            fig[row, col];
+            dest="+proj=longlat +datum=WGS84",
+            limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
+            title=uppercasefirst(replace(string(scen_name), '_' => ' ')),
+            xgridcolor=(:gray, 0.15),
+            ygridcolor=(:gray, 0.15),
+            xticklabelsize=7,
+            yticklabelsize=7
+        )
+        # Keep y ticks only on the left column and x ticks only on the bottom row
+        col == 1 || hideydecorations!(ax; grid=false)
+        row == n_rows || hidexdecorations!(ax; grid=false)
+        poly!(
+            ax,
+            _ne_land.geometry;
+            color=RGBf(0.93, 0.91, 0.87),
+            strokewidth=0.5,
+            strokecolor=:gray40
+        )
+        scatter!(
+            ax,
+            all_centroids[total_seeds[:, iv_col(seeds_dhw, opt_i)] .== 0];
+            color=:gray80, markersize=4, alpha=0.5
+        )
+
+        has_seeds = total_seeds[:, iv_col(seeds_dhw, opt_i)] .> 0
+        vals = total_seeds[has_seeds, iv_col(seeds_dhw, opt_i)]
+        order = sortperm(vals)
+        scatter!(ax, all_centroids[has_seeds][order]; color=vals[order], colormap=:viridis,
+            colorrange=colorrange, markersize=4, alpha=0.7)
+
+        _gbr_annotations!(ax)
+    end
+    Colorbar(fig[:, n_seed_cols + 1];
+        colorrange=colorrange,
         colormap=:viridis,
-        colorrange=seed_colorrange,
-        gray_points=d -> all_centroids[total_seeds[:, iv_col(d, opt_i)] .== 0]
+        label="Total deployed coral",
+        height=Relative(0.65)
     )
-    save(
-        joinpath(pd_config["plot_output_path"], "total_seeds_$(scen_name).png"),
-        fig_seeds;
-        px_per_unit=2
-    )
+
+    # Match each map panel to the GBR extent's aspect (cos-corrected for latitude) so the
+    # axis has no internal horizontal whitespace; only then do the gaps control spacing.
+    map_aspect = (_gbr_lon_max - _gbr_lon_min) * cosd((_gbr_lat_min + _gbr_lat_max) / 2) /
+                 (_gbr_lat_max - _gbr_lat_min)
+    for r in 1:n_rows
+        rowsize!(fig.layout, r, Fixed(panel_height))
+    end
+    for c in 1:n_seed_cols
+        colsize!(fig.layout, c, Aspect(1, map_aspect))
+    end
+    colgap!(fig.layout, colgap)
+    rowgap!(fig.layout, rowgap)
+    resize_to_layout!(fig)
+
+    return fig
 end
+
+# Total seeds per location: one panel per option (3×2 grid), sharing one colorbar,
+# for a single DHW member.
+fig_seeds = plot_total_seeds(
+    total_seeds, scenario_names, all_centroids; seeds_dhw=2, colorrange=seed_colorrange
+)
+save(
+    joinpath(pd_config["plot_output_path"], "total_seeds.png"),
+    fig_seeds;
+    px_per_unit=2
+)
 
 # n_yrs_above_target scatter map per scenario and location filter (one panel per DHW member)
 m_tac = Array(ADRIA.metrics.total_absolute_cover(rs)) .* 1e-6  # km²
