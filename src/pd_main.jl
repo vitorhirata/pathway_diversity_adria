@@ -78,13 +78,41 @@ ADRIA.fix_factor!(dom;
 for dhw in dhw_scenarios
     ADRIA.fix_factor!(dom; dhw_scenario=dhw)
     scen = ADRIA.sample(dom, 2)[1:1, :]
+    # `adjust_samples` zeroes every "seed_*" factor for scenarios where no seeding occurs,
+    # which includes seed_year_start and seed_years. Restore them so the counterfactual
+    # logs its decision matrix over the same timesteps as the seeded scenarios.
+    scen.seed_year_start .= 2
+    scen.seed_years .= seed_years
     scen.pd_frequency .= pd_frequency
     scen.option_ts .= cf_option_ts
     push!(scens, scen)
 end
 scens = vcat(scens...)
 
+# Every scenario must resolve to the same non-empty decision window. `run_model` derives
+# the logged timesteps per scenario, but `decision_matrix_log` is sized once for the whole
+# result store from the first scenario, so a scenario with a different (or empty) window
+# either builds a zero-length axis or fails to write hours into the run.
+pd_windows = unique([
+    (Int64(r.seed_year_start), Int64(r.seed_years), Int64(r.pd_frequency))
+    for r in eachrow(scens)
+])
+if length(pd_windows) != 1 || first(pd_windows)[2] < 2 * first(pd_windows)[3]
+    error(
+        "All scenarios must share one decision window with seed_years >= " *
+        "2 * pd_frequency. Found (seed_year_start, seed_years, pd_frequency): $(pd_windows)"
+    )
+end
+
 # Run scenarios
+# Cap the result-writer chunk size. `@threads` splits the scenarios into one contiguous
+# block per thread, so results arrive from that many index regions at once and the writer
+# holds up to roughly one partial chunk per block before flushing. At ~5.5 MB per scenario
+# (log_dm now stores only the 3 pathway-diversity decision timesteps), 128 keeps that peak
+# near 5 GB; the default (nrow(scens) / nthreads) is ~1100 here, which would be ~45 GB and
+# exhaust RAM. Chunk size only sets write granularity and this memory ceiling — it does not
+# change how scenarios are scheduled.
+ENV["ADRIA_CHUNK_SIZE"] = "128"
 rs = ADRIA.run_scenarios(dom, scens, rcps)
 
 # ----------------------------------------------------------
