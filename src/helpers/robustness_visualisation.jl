@@ -283,6 +283,12 @@ function plot_robustness_vs_diversity(
                 color=option_colors[o_i], whiskerwidth=6
             )
         end
+        # Descriptive rank agreement for this panel (n = number of starting options).
+        tau = kendall_tau_b(sub.pathway_diversity, sub.robustness)
+        text!(ax, 0.03, 0.97;
+            text=isnan(tau) ? "τ = n/a" : "τ = $(round(tau; digits=2))",
+            space=:relative, align=(:left, :top), fontsize=12
+        )
     end
 
     Legend(fig[1:n_r, n_c + 1],

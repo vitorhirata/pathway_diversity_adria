@@ -405,6 +405,80 @@ function join_robustness_diversity(rob_df, pd_df, sel_rcp)
     return joined
 end
 
+# ── Rank agreement between robustness and pathway diversity ────────────────────
+
+"""
+    _kendall_counts(x, y) -> (nc, nd, tx, ty)
+
+Count concordant (`nc`) and discordant (`nd`) pairs of `(x, y)`, plus pairs tied on `x` only
+(`tx`) and on `y` only (`ty`). Pairs tied on both are ignored. These are the ingredients of the
+Kendall τ-b statistic and, crucially, are *additive across strata* — summing them over panels
+yields a blocked τ that only ever compares points within the same panel.
+"""
+function _kendall_counts(x::AbstractVector, y::AbstractVector)
+    n = length(x)
+    nc = nd = tx = ty = 0
+    for i in 1:(n - 1), j in (i + 1):n
+        dx = sign(x[i] - x[j])
+        dy = sign(y[i] - y[j])
+        if dx == 0 && dy == 0
+            continue            # tied on both: contributes to neither τ-b denominator factor
+        elseif dx == 0
+            tx += 1             # tied on x only
+        elseif dy == 0
+            ty += 1             # tied on y only
+        elseif dx == dy
+            nc += 1
+        else
+            nd += 1
+        end
+    end
+    return (nc, nd, tx, ty)
+end
+
+# τ-b from raw pair counts; NaN when one variable has no untied pairs (denominator = 0).
+function _tau_b(nc, nd, tx, ty)
+    denom = sqrt((nc + nd + ty) * (nc + nd + tx))
+    return denom == 0 ? NaN : (nc - nd) / denom
+end
+
+"""
+    kendall_tau_b(x, y) -> Float64
+
+Kendall τ-b rank correlation between vectors `x` and `y`, with tie correction. Interpretable as
+the (concordant − discordant) fraction of comparable pairs: +1 = identical ranking, −1 = exactly
+reversed, 0 = no rank agreement. Returns `NaN` when either variable is all ties.
+"""
+kendall_tau_b(x::AbstractVector, y::AbstractVector) = _tau_b(_kendall_counts(x, y)...)
+
+"""
+    kendall_tau_diversity_robustness(rob_div_df; group_cols=[:N_seed, :n_locations])
+        -> (per_panel, stratified)
+
+Rank agreement between pathway diversity and robustness across starting options.
+
+`per_panel` is a DataFrame (`group_cols`, `tau`, `n`) with a within-panel Kendall τ-b per
+parameter set — the descriptive concordance shown on each facet of Figure D. `stratified` is a
+single *blocked* τ-b: concordant/discordant/tie counts are accumulated within each panel and
+summed across panels, so options are only ever compared against options sharing the same
+`N_seed × n_locations` parameter set. This holds the parameter-set gradient fixed and avoids the
+Simpson's-paradox risk of a naive pool.
+"""
+function kendall_tau_diversity_robustness(rob_div_df; group_cols=[:N_seed, :n_locations])
+    per_panel = combine(groupby(rob_div_df, group_cols)) do sub
+        (tau=kendall_tau_b(sub.pathway_diversity, sub.robustness), n=nrow(sub))
+    end
+
+    nc = nd = tx = ty = 0
+    for sub in groupby(rob_div_df, group_cols)
+        c = _kendall_counts(sub.pathway_diversity, sub.robustness)
+        nc += c[1]; nd += c[2]; tx += c[3]; ty += c[4]
+    end
+    stratified = _tau_b(nc, nd, tx, ty)
+
+    return (per_panel=per_panel, stratified=stratified)
+end
+
 # ── Top robustness pathways (pathways analysis) ────────────────────────────────
 
 """

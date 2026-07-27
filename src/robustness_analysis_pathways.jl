@@ -183,4 +183,11 @@ pathway_diversity_csv_path = ""  # pathway_diversity.csv written by pd_main.jl
 pd_df = CSV.read(pathway_diversity_csv_path, DataFrame)
 rob_div_df = join_robustness_diversity(rob_df, pd_df, sel_rcp)
 
+# Rank agreement between pathway diversity and robustness across starting options. The stratified
+# (blocked) Kendall τ-b compares options only within a shared N_seed × n_locations parameter set,
+# summing pair counts across panels — holding the parameter-set gradient fixed (descriptive; n is
+# small per panel, so no significance test).
+tau_agreement = kendall_tau_diversity_robustness(rob_div_df)
+@info "Stratified (blocked) Kendall τ-b, robustness vs pathway diversity (rcp$(sel_rcp))" τ = tau_agreement.stratified
+
 plot_robustness_vs_diversity(rob_div_df, option_names, option_colors, option_labels, sel_rcp)
