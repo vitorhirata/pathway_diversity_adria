@@ -188,13 +188,14 @@ function plot_robustness_param_scatter(rob_df, option_names, option_colors, opti
     combos = sort(unique([(r.N_seed, r.n_locations) for r in eachrow(rob_df)]); by=first)
     combo_idx = Dict(c => i for (i, c) in enumerate(combos))
     _sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(round(c; digits=1))e$e")
-    combo_labels = ["$(_sci(c[1])) · $(c[2]) locs" for c in combos]
+    combo_labels = ["$(_sci(c[1])) seeds · $(c[2]) locs" for c in combos]
 
     fig = Figure(size=(900, 480))
     ax = Axis(fig[1, 1];
         xticks=(1:length(combos), combo_labels),
         xlabel="Parameter set",
-        ylabel="Worst-DHW robustness\n(median over pathways, P10–P90)",
+        ylabel="Worst case performance",
+        xticklabelrotation = π/4,
         title="Pathway robustness by starting option — RCP $(sel_rcp)"
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
@@ -267,10 +268,15 @@ function plot_robustness_vs_diversity(
     end
 
     for (ri, ns) in enumerate(n_seeds), (ci, nl) in enumerate(n_locs)
+        if ns == 1e6
+            ylims = (-0.0004, 0.002)
+        else
+            ylims = _pad(minimum(rob_div_df.robustness_p10), maximum(rob_div_df.robustness_p90))
+        end
         ax = Axis(fig[ri, ci];
             limits=(xlims, ylims),
             xlabel=ri == n_r ? "Pathway diversity" : "",
-            ylabel=ci == 1 ? "Robustness (worst-DHW median, P10–P90)" : ""
+            ylabel=ci == 1 ? "Worst case performance" : ""
         )
         sub = rob_div_df[(rob_div_df.N_seed .== ns) .& (rob_div_df.n_locations .== nl), :]
         for (o_i, option) in enumerate(option_names)
