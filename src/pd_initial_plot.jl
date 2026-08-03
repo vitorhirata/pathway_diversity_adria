@@ -14,7 +14,7 @@ using CairoMakie, GeoMakie, GraphMakie
 RCP = "45"        # RCP 26, 45, 70
 dhw_scenario = 7
 N_seed = 1e7        # total seeds; split across taxa via N_seed_weights below
-min_iv_locations = 200
+min_iv_locations = 300
 seed_year_start = 2
 seed_years = 10
 pd_frequency = 5
@@ -153,10 +153,10 @@ for i in idx_scens
     similarity[r, c] = ADRIA.analysis.option_similarity(u_dst, u_src)
 
     # 2 outcome subcomponents (mirror switching_probability internals): keeping the same
-    # option is neutral (0.5); switching compares candidate against the :nothing counterfactual.
+    # option scores 0.7 (inertia bias); switching compares candidate against :nothing counterfactual.
     if src == dst
-        cum_rel_tac_diff[r, c] = 0.5
-        cum_fd_diff[r, c] = 0.5
+        cum_rel_tac_diff[r, c] = 0.7
+        cum_fd_diff[r, c] = 0.7
     elseif haskey(option_perf, :nothing) && haskey(option_perf, dst)
         counter = option_perf[:nothing]
         cand_perf = option_perf[dst]

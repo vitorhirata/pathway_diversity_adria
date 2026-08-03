@@ -51,7 +51,7 @@ save("./Outputs/fd_histogram.png", fig_fd)
 raw = -0.002:0.0001:0.002
 scales = [0.001, 0.002, 0.003, 0.004, 0.005]
 n = 0.2
-f(x, scale) = x ≥ 0 ? n + (1 - n) * tanh(x / scale) : n * (1 + tanh(x / scale))
+f(x, scale) = 0.5 * (1 + tanh(x / scale))
 
 fig = Figure()
 ax = Axis(fig[1, 1]; xlabel="raw", ylabel="f(x)")
