@@ -239,14 +239,20 @@ y_s_rsv_raw = vec(mean(ADRIA.metrics.scenario_rsv(rs); dims=:timesteps))
 y_s_juves_raw = vec(mean(ADRIA.metrics.scenario_relative_juveniles(rs); dims=:timesteps))
 y_s_even_raw = vec(mean(ADRIA.metrics.scenario_evenness(rs); dims=:timesteps))
 
+# GBR-scale years above 20% cover: sum the per-reef counts over locations (kept in YAXArray
+# form, then reduced to a per-scenario vector).
+n_yrs_above_gbr = dropdims(sum(n_yrs_above; dims=:locations); dims=:locations)
+y_s_nyrs_raw = Float64.(n_yrs_above_gbr.data)
+
 y_s_tac = cf_relative_change(y_s_tac_raw)
 y_s_rsv = cf_relative_change(y_s_rsv_raw)
 y_s_juves = cf_relative_change(y_s_juves_raw)
 y_s_even = cf_relative_change(y_s_even_raw)
+y_s_nyrs = cf_relative_change(y_s_nyrs_raw)
 
 # ── PAWN sensitivity per metric × tail ────────────────────────────────────────
 
-fig_opts = Dict(:size => (800, 450))
+fig_opts = Dict(:size => (1500, 1000))
 opts = Dict(
     :factors => [
         :dhw_scenario, :dhw_mean, :RCP, :option, :min_iv_locations, :total_deployed_corals,
@@ -271,30 +277,49 @@ axis_opts = Dict(
     :yticklabelsize => 20
 )
 
-metric_ys = [
-    y_tac_bot, y_tac_top,
-    y_nyrs_bot, y_nyrs_top,
-    y_fd_bot, y_fd_top,
-    y_s_tac, y_s_rsv, y_s_juves, y_s_even,
-    y_s_tac_raw, y_s_rsv_raw, y_s_juves_raw, y_s_even_raw
-]
-titles = [
-    "Cumulative cover (worst reefs)", "Cumulative cover (best reefs)",
-    "Years above 20% cover (worst reefs)", "Years above 20% cover (best reefs)",
-    "Cumulative evenness (worst reefs)", "Cumulative evenness (best reefs)",
-    "Total absolute cover (GBR)", "Relative shelter volume (GBR)",
-    "Relative juveniles (GBR)", "Coral evenness (GBR)",
-    "Total absolute cover (GBR, raw)", "Relative shelter volume (GBR, raw)",
-    "Relative juveniles (GBR, raw)", "Coral evenness (GBR, raw)"
-]
-filenames = [
-    "pawn_cf_cumulative_cover_worst", "pawn_cf_cumulative_cover_best",
-    "pawn_cf_years_above_worst", "pawn_cf_years_above_best",
-    "pawn_cf_cumulative_evenness_worst", "pawn_cf_cumulative_evenness_best",
-    "pawn_cf_scenario_total_cover", "pawn_cf_scenario_rsv",
-    "pawn_cf_scenario_juveniles", "pawn_cf_scenario_evenness",
-    "pawn_raw_scenario_total_cover", "pawn_raw_scenario_rsv",
-    "pawn_raw_scenario_juveniles", "pawn_raw_scenario_evenness"
+# Each figure groups one metric type into a 2×2 panel of PAWN indices sharing a single
+# colorbar. Panels are laid out row-major: [(1,1), (1,2), (2,1), (2,2)].
+figure_specs = [
+    (
+        suptitle="Cumulative cover",
+        filename="pawn_cumulative_cover",
+        panels=[
+            (y_s_tac_raw, "GBR (raw)"),
+            (y_s_tac, "GBR (vs counterfactual)"),
+            (y_tac_top, "Best reefs (vs counterfactual)"),
+            (y_tac_bot, "Worst reefs (vs counterfactual)")
+        ]
+    ),
+    (
+        suptitle="Cumulative evenness",
+        filename="pawn_cumulative_evenness",
+        panels=[
+            (y_s_even_raw, "GBR (raw)"),
+            (y_s_even, "GBR (vs counterfactual)"),
+            (y_fd_top, "Best reefs (vs counterfactual)"),
+            (y_fd_bot, "Worst reefs (vs counterfactual)")
+        ]
+    ),
+    (
+        suptitle="Years above 20% cover",
+        filename="pawn_years_above",
+        panels=[
+            (y_s_nyrs_raw, "GBR (raw)"),
+            (y_s_nyrs, "GBR (vs counterfactual)"),
+            (y_nyrs_top, "Best reefs (vs counterfactual)"),
+            (y_nyrs_bot, "Worst reefs (vs counterfactual)")
+        ]
+    ),
+    (
+        suptitle="Shelter volume and relative juveniles",
+        filename="pawn_shelter_juveniles",
+        panels=[
+            (y_s_rsv_raw, "Relative shelter volume (GBR, raw)"),
+            (y_s_rsv, "Relative shelter volume (GBR, vs counterfactual)"),
+            (y_s_juves_raw, "Relative juveniles (GBR, raw)"),
+            (y_s_juves, "Relative juveniles (GBR, vs counterfactual)")
+        ]
+    )
 ]
 
 """
@@ -320,14 +345,30 @@ X[!, :dhw_mean] = [
     dhw_mean_by_rcp[Int64(scen.RCP)][Int64(scen.dhw_scenario)] for scen in eachrow(X)
 ]
 
-for (idx, y) in enumerate(metric_ys)
-    si = ADRIA.sensitivity.pawn(X, y[intervention_idxs])
-    axis_opts[:title] = titles[idx]
+for spec in figure_specs
     f = Figure(; fig_opts...)
-    g = f[1, 1] = GridLayout()
-    ADRIA.viz.pawn!(g, si; opts=opts, axis_opts=axis_opts)
+    for (i, (y, ptitle)) in enumerate(spec.panels)
+        row = (i - 1) ÷ 2 + 1
+        col = (i - 1) % 2 + 1
+        si = ADRIA.sensitivity.pawn(X, y[intervention_idxs])
+        g = f[row, col] = GridLayout()
+        ax_opts = copy(axis_opts)
+        ax_opts[:title] = ptitle
+        # Factor labels are identical across panels; keep them only on the left column.
+        if col == 2
+            ax_opts[:yticklabelsvisible] = false
+        end
+        ADRIA.viz.pawn!(g, si; opts=opts, axis_opts=ax_opts)
+        Label(
+            g[1, 1, TopLeft()], "$('a' + i - 1))";
+            fontsize=26,
+            font=:bold,
+            halign=:right,
+            padding=(0, 8, 8, 0)
+        )
+    end
     Colorbar(
-        g[1, 2];
+        f[1:2, 3];
         colormap=:viridis,
         colorrange=(0, 1),
         label="Relative Sensitivity",
@@ -335,5 +376,6 @@ for (idx, y) in enumerate(metric_ys)
         ticklabelsize=20,
         height=Relative(0.65)
     )
-    save(joinpath(pd_config["plot_output_path"], "$(filenames[idx]).png"), f)
+    Label(f[0, 1:2], spec.suptitle; fontsize=28, font=:bold)
+    save(joinpath(pd_config["plot_output_path"], "$(spec.filename).png"), f)
 end
