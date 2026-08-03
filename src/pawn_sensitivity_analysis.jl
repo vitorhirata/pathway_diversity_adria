@@ -209,11 +209,11 @@ for s in intervention_idxs
     cf_fd = cum_fd.data[:, cf_s]
 
     y_nyrs_bot[s], y_nyrs_top[s] =
-        delta_tail_ratio(opt_nyrs, cf_nyrs; tail_fraction=tail_fraction, norm=float(seed_years))
+        delta_tail_ratio(opt_nyrs, cf_nyrs; tail_fraction=tail_fraction, norm=1.0)
     y_tac_bot[s], y_tac_top[s] =
-        delta_tail_ratio(opt_tac, cf_tac; tail_fraction=tail_fraction)
+        delta_tail_ratio(opt_tac, cf_tac; tail_fraction=tail_fraction, norm=1.0)
     y_fd_bot[s], y_fd_top[s] =
-        delta_tail_ratio(opt_fd, cf_fd; tail_fraction=tail_fraction)
+        delta_tail_ratio(opt_fd, cf_fd; tail_fraction=tail_fraction, norm=1.0)
 end
 
 # ── GBR-scale metrics, raw and counterfactual-relative ────────────────────────
@@ -227,7 +227,7 @@ function cf_relative_change(scen_metric::AbstractVector)::Vector{Float64}
     out = fill(NaN, length(scen_metric))
     for s in intervention_idxs
         cf_s = cf_lookup[(rs.inputs.dhw_scenario[s], rs.inputs.RCP[s])]
-        out[s] = (scen_metric[s] - scen_metric[cf_s]) / scen_metric[cf_s]
+        out[s] = (scen_metric[s] - scen_metric[cf_s])
     end
     return out
 end
