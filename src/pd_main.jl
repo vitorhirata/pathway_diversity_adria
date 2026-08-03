@@ -30,9 +30,15 @@ ADRIA.fix_factor!(dom;
 
 dhw_scenarios = [2, 7, 10]
 n_seed_locations = [
-    [1e6, 200],
-    #[1e7, 200],
-    [1e8, 200]
+    [1e6, 100],
+    [1e6, 300],
+    [1e6, 500],
+    [1e7, 100],
+    [1e7, 300],
+    [1e7, 500],
+    [1e8, 100],
+    [1e8, 300],
+    [1e8, 500]
 ]
 
 params = fill(zeros(Int64, 3), length(dhw_scenarios) * length(n_seed_locations))
@@ -200,7 +206,7 @@ scenario_probs = CSV.read(
     joinpath(pd_config["plot_output_path"], "scenario_probabilities.csv"), DataFrame
 )
 # Filter scenarios with zero probability
-scenario_probs = filter(!iszero, scenario_probs)
+scenario_probs = filter(:probability => !iszero, scenario_probs)
 
 
 min_pd = floor(minimum(pd_df.pathway_diversity) * 0.98; digits=1)
@@ -430,8 +436,15 @@ end
 
 boxplot_dhw = 7  # change to inspect a different DHW scenario
 boxplot_configs = [
-    (N_seed=1_000_000, n_locations=200, rcp=45),
-    (N_seed=100_000_000, n_locations=200, rcp=45)
+    (N_seed=1_000_000, n_locations=100, rcp=45),
+    (N_seed=1_000_000, n_locations=300, rcp=45),
+    (N_seed=1_000_000, n_locations=500, rcp=45),
+    (N_seed=10_000_000, n_locations=100, rcp=45),
+    (N_seed=10_000_000, n_locations=300, rcp=45),
+    (N_seed=10_000_000, n_locations=500, rcp=45),
+    (N_seed=100_000_000, n_locations=100, rcp=45),
+    (N_seed=100_000_000, n_locations=300, rcp=45),
+    (N_seed=100_000_000, n_locations=500, rcp=45)
 ]
 
 n_opt = length(option_names)
@@ -455,9 +468,9 @@ for (row, cfg) in enumerate(boxplot_configs)
         yticks=(1:n_opt, string.(option_names)),
         xlabel=(row == length(boxplot_configs) ? "Switching probability" : "")
     )
-    boxplot!(ax, cats, df.probability; orientation=:horizontal, color=colors)
+    violin!(ax, cats, df.probability; orientation=:horizontal, color=colors)
 end
-save(joinpath(pd_config["plot_output_path"], "probability_boxplots.png"), fig)
+save(joinpath(pd_config["plot_output_path"], "probability_violin.png"), fig)
 
 # ----------------------------------------------------------
 # Lock-in score across decision steps
@@ -470,8 +483,15 @@ save(joinpath(pd_config["plot_output_path"], "probability_boxplots.png"), fig)
 
 # Configurable parameter sets. Each entry is one colored line; n_locations fixed at 200.
 lockin_configs = [
-    (N_seed=1_000_000,   n_locations=200, rcp=45),
-    (N_seed=100_000_000, n_locations=200, rcp=45)
+    (N_seed=1_000_000, n_locations=100, rcp=45),
+    (N_seed=1_000_000, n_locations=300, rcp=45),
+    (N_seed=1_000_000, n_locations=500, rcp=45),
+    (N_seed=10_000_000, n_locations=100, rcp=45),
+    (N_seed=10_000_000, n_locations=300, rcp=45),
+    (N_seed=10_000_000, n_locations=500, rcp=45),
+    (N_seed=100_000_000, n_locations=100, rcp=45),
+    (N_seed=100_000_000, n_locations=300, rcp=45),
+    (N_seed=100_000_000, n_locations=500, rcp=45)
 ]
 
 # Long table: one row per (config, dhw, decision_step)
@@ -536,7 +556,7 @@ ax = Axis(fig[1, 1];
     ylabel="P(keep current option)",
     xticks=(1:(number_changes - 1), string.(1:(number_changes - 1)))
 )
-palette = Makie.current_default_theme().palette.color[]
+palette = Makie.to_colormap(:tab10)
 n_cfg = length(lockin_configs)
 # Small per-series x-offset so overlapping whiskers stay legible
 dodge_offsets = [(i - (n_cfg + 1) / 2) * 0.04 for i in 1:n_cfg]
@@ -562,7 +582,7 @@ for (i, cfg) in enumerate(lockin_configs)
 end
 
 elements = [LineElement(; color=palette[i]) for i in 1:n_cfg]
-labels = ["$(_sci(cfg.N_seed)) · RCP$(cfg.rcp)" for cfg in lockin_configs]
+labels = ["$(_sci(cfg.N_seed)) · Number of locations $(cfg.n_locations)" for cfg in lockin_configs]
 Legend(fig[1, 2], elements, labels, "Parameter set")
 save(joinpath(pd_config["plot_output_path"], "lockin_scores.png"), fig)
 
@@ -584,13 +604,14 @@ pd_param_sets = sort(
     unique([(r.N_seed, r.n_locations) for r in eachrow(worst_pd)]); by=first
 )
 pd_param_idx = Dict(c => i for (i, c) in enumerate(pd_param_sets))
-pd_param_labels = ["$(_sci(c[1])) · $(c[2]) locs" for c in pd_param_sets]
+pd_param_labels = ["$(_sci(c[1])) seeds · $(c[2]) locs" for c in pd_param_sets]
 
 fig = Figure(; size=(800, 400))
 ax = Axis(fig[1, 1];
     xticks=(1:length(pd_param_sets), pd_param_labels),
     xlabel="Parameter set",
     ylabel="Pathway diversity",
+    xticklabelrotation = π/4,
     title="Pathway diversity by starting option"
 )
 for (o_i, option) in enumerate(unique_options)
