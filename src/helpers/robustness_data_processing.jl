@@ -386,7 +386,11 @@ value. Robustness is `rob_df.median` (median of the per-pathway worst-over-DHW r
 diversity is the *worst* (minimum over DHW scenarios) value from `pd_df` (an options-format
 table: `option_name, pathway_diversity, N_seed, dhw_scenario, n_locations, rcp`) at `sel_rcp`.
 Returns columns `start_option, N_seed, n_locations, robustness, robustness_p10, robustness_p90,
-pathway_diversity`.
+pathway_diversity, dominated?`.
+
+`dominated?` flags Pareto-dominated options: within a parameter set (N_seed × n_locations), an
+option is dominated when another option is at least as good in both dimensions (pathway diversity
+and robustness) and strictly better in at least one.
 """
 function join_robustness_diversity(rob_df, pd_df, sel_rcp)
     worst = combine(
@@ -402,6 +406,20 @@ function join_robustness_diversity(rob_df, pd_df, sel_rcp)
         worst; on=[:start_option, :N_seed, :n_locations]
     )
     rename!(joined, :median => :robustness, :p10 => :robustness_p10, :p90 => :robustness_p90)
+
+    # Pareto dominance within each parameter set (N_seed × n_locations). An option is dominated if
+    # some other option in the same panel is ≥ on both axes and strictly > on at least one.
+    joined[!, "dominated?"] = falses(nrow(joined))
+    for panel in groupby(joined, [:N_seed, :n_locations])
+        x = panel.pathway_diversity
+        y = panel.robustness
+        for i in 1:nrow(panel)
+            panel[i, "dominated?"] = any(
+                j -> j != i && x[j] >= x[i] && y[j] >= y[i] && (x[j] > x[i] || y[j] > y[i]),
+                1:nrow(panel)
+            )
+        end
+    end
     return joined
 end
 

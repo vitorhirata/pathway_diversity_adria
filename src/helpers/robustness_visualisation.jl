@@ -239,10 +239,10 @@ end
 
 Facetted scatter of robustness (y) vs pathway diversity (x), coloured by starting option, one
 panel per parameter set. Point = median robustness over pathways with P10–P90 whiskers (same
-pattern as [`plot_robustness_param_scatter`]). Panels are gridded so columns = number of
-locations and rows = number of seeds. All panels share the same x scale and the same y scale
-(limits fixed globally, and wide enough to contain the whiskers).
-`rob_div_df` is the output of [`join_robustness_diversity`].
+pattern as [`plot_robustness_param_scatter`]); dominated (non-Pareto-optimal) options are hollow.
+Panels are gridded so columns = number of locations and rows = number of seeds. All panels share
+the same x scale and the same y scale (limits fixed globally, and wide enough to contain the
+whiskers). `rob_div_df` is the output of [`join_robustness_diversity`].
 """
 function plot_robustness_vs_diversity(
     rob_div_df, option_names, option_colors, option_labels, sel_rcp
@@ -282,7 +282,13 @@ function plot_robustness_vs_diversity(
         for (o_i, option) in enumerate(option_names)
             r = sub[sub.start_option .== string(option), :]
             isempty(r) && continue
-            scatter!(ax, r.pathway_diversity, r.robustness; color=option_colors[o_i], markersize=12)
+            # Dominated (non-Pareto-optimal) options are drawn as hollow circles.
+            dom = r[!, "dominated?"]
+            nd = .!dom
+            any(nd) && scatter!(ax, r.pathway_diversity[nd], r.robustness[nd];
+                color=option_colors[o_i], markersize=12)
+            any(dom) && scatter!(ax, r.pathway_diversity[dom], r.robustness[dom];
+                color=:transparent, strokecolor=option_colors[o_i], strokewidth=1.5, markersize=12)
             errorbars!(
                 ax, r.pathway_diversity, r.robustness,
                 r.robustness .- r.robustness_p10, r.robustness_p90 .- r.robustness;
@@ -298,9 +304,16 @@ function plot_robustness_vs_diversity(
     end
 
     Legend(fig[1:n_r, n_c + 1],
-        [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
-        option_labels;
-        title="Starting option", framevisible=false
+        [
+            [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
+            [
+                MarkerElement(; marker=:circle, color=:gray40),
+                MarkerElement(; marker=:circle, color=:transparent, strokecolor=:gray40, strokewidth=1.5)
+            ]
+        ],
+        [option_labels, ["Pareto-optimal", "dominated"]],
+        ["Starting option", "Marker"];
+        framevisible=false
     )
 
     save(
