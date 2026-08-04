@@ -470,29 +470,54 @@ reversed, 0 = no rank agreement. Returns `NaN` when either variable is all ties.
 kendall_tau_b(x::AbstractVector, y::AbstractVector) = _tau_b(_kendall_counts(x, y)...)
 
 """
+    panel_tau_diversity_robustness(sub) -> Float64
+
+Within-panel Kendall τ-b between pathway diversity and robustness, folding in the P10/median/P90
+robustness spread as the mean of three separate τ-b's, one per robustness level.
+"""
+function panel_tau_diversity_robustness(sub)
+    x = sub.pathway_diversity
+    return mean((
+        kendall_tau_b(x, sub.robustness_p10),
+        kendall_tau_b(x, sub.robustness),
+        kendall_tau_b(x, sub.robustness_p90),
+    ))
+end
+
+"""
     kendall_tau_diversity_robustness(rob_div_df; group_cols=[:N_seed, :n_locations])
         -> (per_panel, stratified)
 
-Rank agreement between pathway diversity and robustness across starting options.
+Rank agreement between pathway diversity and robustness across starting options, using the full
+P10/median/P90 robustness spread (see [`panel_tau_diversity_robustness`]).
 
 `per_panel` is a DataFrame (`group_cols`, `tau`, `n`) with a within-panel Kendall τ-b per
 parameter set — the descriptive concordance shown on each facet of Figure D. `stratified` is a
-single *blocked* τ-b: concordant/discordant/tie counts are accumulated within each panel and
-summed across panels, so options are only ever compared against options sharing the same
-`N_seed × n_locations` parameter set. This holds the parameter-set gradient fixed and avoids the
-Simpson's-paradox risk of a naive pool.
+single *blocked* τ-b: a blocked τ-b is computed per robustness level (concordant/discordant/tie
+counts accumulated within each panel and summed across panels) and the three are averaged. Options
+are only ever compared against options sharing the same `N_seed × n_locations` parameter set. This
+holds the parameter-set gradient fixed and avoids the Simpson's-paradox risk of a naive pool.
 """
 function kendall_tau_diversity_robustness(rob_div_df; group_cols=[:N_seed, :n_locations])
     per_panel = combine(groupby(rob_div_df, group_cols)) do sub
-        (tau=kendall_tau_b(sub.pathway_diversity, sub.robustness), n=nrow(sub))
+        (tau=panel_tau_diversity_robustness(sub), n=nrow(sub))
     end
 
-    nc = nd = tx = ty = 0
-    for sub in groupby(rob_div_df, group_cols)
-        c = _kendall_counts(sub.pathway_diversity, sub.robustness)
-        nc += c[1]; nd += c[2]; tx += c[3]; ty += c[4]
+    # Blocked τ-b: sum pair counts within panels, only comparing options in the same panel.
+    _blocked_tau(yfun) = begin
+        nc = nd = tx = ty = 0
+        for sub in groupby(rob_div_df, group_cols)
+            c = _kendall_counts(yfun(sub)...)
+            nc += c[1]; nd += c[2]; tx += c[3]; ty += c[4]
+        end
+        _tau_b(nc, nd, tx, ty)
     end
-    stratified = _tau_b(nc, nd, tx, ty)
+
+    stratified = mean((
+        _blocked_tau(s -> (s.pathway_diversity, s.robustness_p10)),
+        _blocked_tau(s -> (s.pathway_diversity, s.robustness)),
+        _blocked_tau(s -> (s.pathway_diversity, s.robustness_p90)),
+    ))
 
     return (per_panel=per_panel, stratified=stratified)
 end

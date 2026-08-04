@@ -242,7 +242,9 @@ panel per parameter set. Point = median robustness over pathways with P10–P90 
 pattern as [`plot_robustness_param_scatter`]); dominated (non-Pareto-optimal) options are hollow.
 Panels are gridded so columns = number of locations and rows = number of seeds. All panels share
 the same x scale and the same y scale (limits fixed globally, and wide enough to contain the
-whiskers). `rob_div_df` is the output of [`join_robustness_diversity`].
+whiskers). Each panel is annotated with a Kendall τ that folds in the P10/median/P90 robustness
+spread via [`panel_tau_diversity_robustness`]. `rob_div_df` is the output of
+[`join_robustness_diversity`].
 """
 function plot_robustness_vs_diversity(
     rob_div_df, option_names, option_colors, option_labels, sel_rcp
@@ -295,10 +297,10 @@ function plot_robustness_vs_diversity(
                 color=option_colors[o_i], whiskerwidth=6
             )
         end
-        # Descriptive rank agreement for this panel (n = number of starting options).
-        tau = kendall_tau_b(sub.pathway_diversity, sub.robustness)
+        # Descriptive rank agreement for this panel, folding in the P10/median/P90 robustness spread.
+        tau = panel_tau_diversity_robustness(sub)
         text!(ax, 0.03, 0.97;
-            text=isnan(tau) ? "τ = n/a" : "τ = $(round(tau; digits=2))",
+            text=isnan(tau) ? "Kendall-τ = n/a" : "Kendall-τ = $(round(tau; digits=2))",
             space=:relative, align=(:left, :top), fontsize=12
         )
     end
