@@ -215,18 +215,21 @@ max_pd = ceil(maximum(pd_df.pathway_diversity) * 1.02; digits=1)
 unique_options = unique(pd_df.option_name)
 option_map = Dict(opt => i for (i, opt) in enumerate(unique_options))
 
-# Cover by scenario # TODO: change plot
-s_tac = ADRIA.metrics.scenario_total_cover(rs)
+# ----------------------------------------------------------
+# Coral Cover timeseries clustered by starting option
+
+sel_N_seed = 1e7
+sel_n_locations = 300
+sel_DHW_scenario = 7
+
 idx_fix_param = findall(
-    scens.N_seed_CA .== 1e10 .&& scens.min_iv_locations .== 1000 .&&
-    scens.dhw_scenario .== 7
+    rs.inputs.N_seed_CA .== sel_N_seed * N_seed_weights.N_seed_CA .&&
+    rs.inputs.min_iv_locations .== sel_n_locations .&&
+    rs.inputs.dhw_scenario .== sel_DHW_scenario
 )
-s_tac_clean = s_tac[
-    scenarios=idx_fix_param,
-    timesteps=1:Int64(
-        rs.inputs.seed_year_start[1] + rs.inputs.seed_years[1]
-    )
-]
+
+s_tac = ADRIA.metrics.scenario_total_cover(rs)
+s_tac_clean = s_tac[scenarios=idx_fix_param]
 
 clusters = zeros(Int64, length(idx_fix_param))
 for (option, idx) in option_map
