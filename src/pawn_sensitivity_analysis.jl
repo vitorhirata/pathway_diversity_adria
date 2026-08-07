@@ -34,11 +34,11 @@ using GeoMakie, GraphMakie, CairoMakie
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 seed_years = 20
-tail_fraction = 0.05
+tail_fraction = 0.03
 rcps = ["26", "45", "70"]
-dhw_scenarios = [5, 7, 9, 11]
+dhw_scenarios = [2, 5, 7, 9, 11]
 
-N_seeds = [1e6, 1e7, 1e8]
+N_seeds = [1e6, 5e6, 1e7, 5e7, 1e8]
 min_locations = [50, 200, 500, 1000]
 seeding_devices = [2, 5, 10]
 a_adapts = [2, 5, 10]
@@ -89,9 +89,8 @@ for N_seed in N_seeds, (opt_idx, option) in enumerate(eachrow(options)),
     scens[row, :seed_out_connectivity] = option[4]
     scens[row, :seed_depth] = option[5]
     scens[row, :seed_coral_cover] = option[6]
-    scens[row, :seed_cluster_diversity] = option[7]
-    scens[row, :seed_geographic_separation] = option[8]
-    scens[row, :seed_coral_diversity] = option[9]
+    scens[row, :seed_geographic_separation] = option[7]
+    scens[row, :seed_coral_diversity] = option[8]
     scens[row, :dhw_scenario] = dhw_scenario
     scens[row, :min_iv_locations] = min_location
     scens[row, :seeding_devices_per_m2] = device
