@@ -378,13 +378,13 @@ function worst_dhw_robustness(
 end
 
 """
-    join_robustness_diversity(rob_df, pd_df, sel_rcp) -> DataFrame
+    join_robustness_diversity(rob_df, pd_df) -> DataFrame
 
 Pair each (starting option × parameter set) with a robustness value and a pathway-diversity
 value. Robustness is `rob_df.median` (median of the per-pathway worst-over-DHW robustness from
 [`worst_dhw_robustness`]), carried through with its P10/P90 spread over pathways; pathway
 diversity is the *worst* (minimum over DHW scenarios) value from `pd_df` (an options-format
-table: `option_name, pathway_diversity, N_seed, dhw_scenario, n_locations, rcp`) at `sel_rcp`.
+table: `option_name, pathway_diversity, N_seed, dhw_scenario, n_locations, rcp`).
 Returns columns `start_option, N_seed, n_locations, robustness, robustness_p10, robustness_p90,
 pathway_diversity, dominated?`.
 
@@ -392,9 +392,9 @@ pathway_diversity, dominated?`.
 option is dominated when another option is at least as good in both dimensions (pathway diversity
 and robustness) and strictly better in at least one.
 """
-function join_robustness_diversity(rob_df, pd_df, sel_rcp)
+function join_robustness_diversity(rob_df, pd_df)
     worst = combine(
-        groupby(pd_df[pd_df.rcp .== sel_rcp, :], [:option_name, :N_seed, :n_locations])
+        groupby(pd_df, [:option_name, :N_seed, :n_locations])
     ) do sub
         (pathway_diversity=minimum(sub.pathway_diversity),)
     end

@@ -132,7 +132,7 @@ CSV.write(joinpath(pd_config["plot_output_path"], "robustness.csv"), rob_df)
 # Combine two simulations by stacking rows
 #rob_df = vcat(rob_df, rob_df2)
 
-plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
+plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels)
 
 # ── Top robustness pathways per starting option and parameter set ─────────────
 #
@@ -193,13 +193,13 @@ plot_pathways_weighted(
 pathway_diversity_csv_path = ""  # pathway_diversity.csv written by pd_main.jl
 
 pd_df = CSV.read(pathway_diversity_csv_path, DataFrame)
-rob_div_df = join_robustness_diversity(rob_df, pd_df, sel_rcp)
+rob_div_df = join_robustness_diversity(rob_df, pd_df)
 
 # Rank agreement between pathway diversity and robustness across starting options. The stratified
 # (blocked) Kendall τ-b compares options only within a shared N_seed × n_locations parameter set,
 # summing pair counts across panels — holding the parameter-set gradient fixed (descriptive; n is
 # small per panel, so no significance test).
 tau_agreement = kendall_tau_diversity_robustness(rob_div_df)
-@info "Stratified (blocked) Kendall τ-b, robustness vs pathway diversity (rcp$(sel_rcp))" τ = tau_agreement.stratified
+@info "Stratified (blocked) Kendall τ-b, robustness vs pathway diversity" τ = tau_agreement.stratified
 
-plot_robustness_vs_diversity(rob_div_df, option_names, option_colors, option_labels, sel_rcp)
+plot_robustness_vs_diversity(rob_div_df, option_names, option_colors, option_labels)

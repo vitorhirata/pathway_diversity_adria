@@ -175,14 +175,14 @@ function plot_pathways_weighted(
 end
 
 """
-    plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
+    plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels)
 
 Worst-over-DHW pathway robustness per (starting option × parameter set). x = parameter set,
 y = robustness, colour = starting option; point = median over pathways, whiskers = P10/P90, one
 line linking each starting option across parameter sets. `rob_df` is the output of
 [`worst_dhw_robustness`].
 """
-function plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
+function plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels)
     # Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed then n_locations.
     combos = sort(unique([(r.N_seed, r.n_locations) for r in eachrow(rob_df)]))
     combo_idx = Dict(c => i for (i, c) in enumerate(combos))
@@ -225,15 +225,15 @@ function plot_robustness_param_scatter(rob_df, option_names, option_colors, opti
     save(
         joinpath(
             pd_config["plot_output_path"],
-            "robustness_pathways_param_scatter_rcp$(sel_rcp).png"
+            "robustness_pathways_param_scatter.png"
         ),
         fig; px_per_unit=2
     )
-    @info "Saved robustness_pathways_param_scatter_rcp$(sel_rcp).png"
+    @info "Saved robustness_pathways_param_scatter.png"
 end
 
 """
-    plot_robustness_vs_diversity(rob_div_df, option_names, option_colors, option_labels, sel_rcp)
+    plot_robustness_vs_diversity(rob_div_df, option_names, option_colors, option_labels)
 
 Facetted scatter of robustness (y) vs pathway diversity (x), coloured by starting option, one
 panel per parameter set. Point = median robustness over pathways with P10–P90 whiskers (same
@@ -245,7 +245,7 @@ spread via [`panel_tau_diversity_robustness`]. `rob_div_df` is the output of
 [`join_robustness_diversity`].
 """
 function plot_robustness_vs_diversity(
-    rob_div_df, option_names, option_colors, option_labels, sel_rcp
+    rob_div_df, option_names, option_colors, option_labels
 )
     _sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(round(c; digits=1))e$e")
 
@@ -319,11 +319,11 @@ function plot_robustness_vs_diversity(
     save(
         joinpath(
             pd_config["plot_output_path"],
-            "robustness_vs_diversity_rcp$(sel_rcp).png"
+            "robustness_vs_diversity.png"
         ),
         fig; px_per_unit=2
     )
-    @info "Saved robustness_vs_diversity_rcp$(sel_rcp).png"
+    @info "Saved robustness_vs_diversity.png"
 end
 
 # ── Static-option figures ─────────────────────────────────────────────────────
