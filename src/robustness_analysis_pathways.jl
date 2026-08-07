@@ -74,7 +74,8 @@ option_color_map = Dict(
     "balanced" => Makie.wong_colors()[5]
 )
 option_colors = [option_color_map[string(o)] for o in option_names]
-option_labels = string.(option_names)
+# Pretty option labels: "heat_stress" → "Heat stress"
+option_labels = [uppercasefirst(replace(string(o), "_" => " ")) for o in option_names]
 
 # ── Figure A — boxplot per starting option (per-reef deltas pooled over paths) ─
 

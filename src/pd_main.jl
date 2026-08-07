@@ -552,9 +552,8 @@ fig = Figure(; size=(800, 400))
 ax = Axis(fig[1, 1];
     xticks=(1:length(pd_param_sets), pd_param_labels),
     xlabel="Parameter set",
-    ylabel="Pathway diversity",
-    xticklabelrotation = π/4,
-    title="Pathway diversity by starting option"
+    ylabel="Worst-case pathway diversity",
+    xticklabelrotation = π/4
 )
 for (o_i, option) in enumerate(unique_options)
     sub = worst_pd[worst_pd.option_name .== option, :]
@@ -565,7 +564,7 @@ for (o_i, option) in enumerate(unique_options)
 end
 Legend(fig[1, 2],
     [MarkerElement(; marker=:circle, color=option_color_map[opt]) for opt in unique_options],
-    string.(unique_options);
+    [uppercasefirst(replace(opt, "_" => " ")) for opt in unique_options];
     title="Starting option", framevisible=false
 )
 save(joinpath(pd_config["plot_output_path"], "pathway_diversity_worst_dhw.png"), fig)

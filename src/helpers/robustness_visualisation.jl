@@ -87,8 +87,7 @@ function plot_pathways_cvar(
     ax = Axis(fig[1, 1];
         xticks=(1:6, metric_labels),
         xticklabelsize=11,
-        ylabel="Relative performance against \ncounterfactual (no interv.)",
-        title="Pathway robustness by starting option — RCP $(sel_rcp), dhw $(sel_dhw)"
+        ylabel="Relative performance against counterfactual"
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
     vlines!(ax, [2.5, 4.5]; color=:gray70, linewidth=1, linestyle=:dash)
@@ -194,9 +193,8 @@ function plot_robustness_param_scatter(rob_df, option_names, option_colors, opti
     ax = Axis(fig[1, 1];
         xticks=(1:length(combos), combo_labels),
         xlabel="Parameter set",
-        ylabel="Worst case performance",
-        xticklabelrotation = π/4,
-        title="Pathway robustness by starting option — RCP $(sel_rcp)"
+        ylabel="Worst-case performance",
+        xticklabelrotation = π/4
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
 
@@ -277,8 +275,8 @@ function plot_robustness_vs_diversity(
         end
         ax = Axis(fig[ri, ci];
             limits=(xlims, ylims),
-            xlabel=ri == n_r ? "Pathway diversity" : "",
-            ylabel=ci == 1 ? "Worst case performance" : ""
+            xlabel=ri == n_r ? "Worst-case pathway diversity" : "",
+            ylabel=ci == 1 ? "Worst-case performance" : ""
         )
         sub = rob_div_df[(rob_div_df.N_seed .== ns) .& (rob_div_df.n_locations .== nl), :]
         for (o_i, option) in enumerate(option_names)
@@ -313,7 +311,7 @@ function plot_robustness_vs_diversity(
                 MarkerElement(; marker=:circle, color=:transparent, strokecolor=:gray40, strokewidth=1.5)
             ]
         ],
-        [option_labels, ["Pareto-optimal", "dominated"]],
+        [option_labels, ["Dominating", "Dominated"]],
         ["Starting option", "Marker"];
         framevisible=false
     )
