@@ -532,9 +532,9 @@ worst_pd = combine(
     (worst_pd=minimum(subdf.pathway_diversity),)
 end
 
-# Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed
+# Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed then n_locations
 pd_param_sets = sort(
-    unique([(r.N_seed, r.n_locations) for r in eachrow(worst_pd)]); by=first
+    unique([(r.N_seed, r.n_locations) for r in eachrow(worst_pd)])
 )
 pd_param_idx = Dict(c => i for (i, c) in enumerate(pd_param_sets))
 pd_param_labels = ["$(_sci(c[1])) seeds · $(c[2]) locs" for c in pd_param_sets]

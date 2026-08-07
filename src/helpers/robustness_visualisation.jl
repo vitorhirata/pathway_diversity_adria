@@ -184,8 +184,8 @@ line linking each starting option across parameter sets. `rob_df` is the output 
 [`worst_dhw_robustness`].
 """
 function plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels, sel_rcp)
-    # Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed.
-    combos = sort(unique([(r.N_seed, r.n_locations) for r in eachrow(rob_df)]); by=first)
+    # Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed then n_locations.
+    combos = sort(unique([(r.N_seed, r.n_locations) for r in eachrow(rob_df)]))
     combo_idx = Dict(c => i for (i, c) in enumerate(combos))
     _sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(round(c; digits=1))e$e")
     combo_labels = ["$(_sci(c[1])) seeds · $(c[2]) locs" for c in combos]
