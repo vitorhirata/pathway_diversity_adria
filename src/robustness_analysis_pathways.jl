@@ -65,7 +65,15 @@ cf_idx = find_counterfactual(rs, sel_dhw, sel_rcp)
 opt_metric_mats = (nyrs, ctac, cfd)
 cf_metric_full = (nyrs[:, cf_idx], ctac[:, cf_idx], cfd[:, cf_idx])
 
-option_colors = Makie.wong_colors()[1:n_options]
+# Fixed colour per starting option, shared across all plots (first 5 Wong colors).
+option_color_map = Dict(
+    "heat_stress" => Makie.wong_colors()[1],
+    "geographic_spread" => Makie.wong_colors()[2],
+    "connectivity" => Makie.wong_colors()[3],
+    "functional_diversity" => Makie.wong_colors()[4],
+    "balanced" => Makie.wong_colors()[5]
+)
+option_colors = [option_color_map[string(o)] for o in option_names]
 option_labels = string.(option_names)
 
 # ── Figure A — boxplot per starting option (per-reef deltas pooled over paths) ─

@@ -215,6 +215,15 @@ max_pd = ceil(maximum(pd_df.pathway_diversity) * 1.02; digits=1)
 unique_options = unique(pd_df.option_name)
 option_map = Dict(opt => i for (i, opt) in enumerate(unique_options))
 
+# Fixed colour per starting option, shared across all plots (first 5 Wong colors).
+option_color_map = Dict(
+    "heat_stress" => Makie.wong_colors()[1],
+    "geographic_spread" => Makie.wong_colors()[2],
+    "connectivity" => Makie.wong_colors()[3],
+    "functional_diversity" => Makie.wong_colors()[4],
+    "balanced" => Makie.wong_colors()[5]
+)
+
 # ----------------------------------------------------------
 # Coral Cover timeseries clustered by starting option
 
@@ -552,10 +561,10 @@ for (o_i, option) in enumerate(unique_options)
     isempty(sub) && continue
     x = [pd_param_idx[(r.N_seed, r.n_locations)] for r in eachrow(sub)]
     order = sortperm(x)
-    scatterlines!(ax, x[order], sub.worst_pd[order]; color=palette[o_i], markersize=10)
+    scatterlines!(ax, x[order], sub.worst_pd[order]; color=option_color_map[option], markersize=10)
 end
 Legend(fig[1, 2],
-    [MarkerElement(; marker=:circle, color=palette[i]) for i in 1:length(unique_options)],
+    [MarkerElement(; marker=:circle, color=option_color_map[opt]) for opt in unique_options],
     string.(unique_options);
     title="Starting option", framevisible=false
 )
