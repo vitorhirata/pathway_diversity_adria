@@ -31,6 +31,7 @@ Varied factors:
 
 include("src/common.jl")
 using GeoMakie, GraphMakie, CairoMakie
+using ADRIA.Distributions: LogUniform, TriangularDist  # quantile comes from Statistics (extended)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -41,8 +42,9 @@ n_sobol = 512  # must be a power of 2 (Sobol' sampler requirement)
 
 # Distribution bounds/levels of the sampled factors. dhw_scenario is left at its default
 # category tuple, i.e. every DHW member in the domain.
-N_seed_bounds = (1e6, 1e8)      # total corals per deployment, sampled log-uniformly
-min_loc_bounds = (50.0, 1000.0)
+N_seed_bounds = (1e6, 1e8)      # total corals per deployment, sampled log-triangular (mode below)
+N_seed_peak = 3e6               # mode of the log-triangular budget: dense around realistic sizes
+min_loc_bounds = (50.0, 1000.0) # number of intervention locations, sampled log-uniform
 device_levels = (2.0, 5.0, 10.0)
 a_adapt_bounds = (2.0, 10.0, 0.5)  # (lower, upper, step)
 N_seed_weights = (
@@ -94,10 +96,21 @@ n_opts = nrow(options)
 scens = repeat(ADRIA.sample(dom, n_sobol); inner=n_opts)
 scens[!, :option] = repeat(1:n_opts, n_sobol)
 
-# Log-uniform total seeding budget: the sampled value is uniform over a regular grid, so `u`
-# is uniform on [0, 1] and the exponential map is a valid inverse-CDF transform.
+# Log-uniform number of intervention locations. `min_iv_locations` is sampled uniformly over a
+# regular integer grid, so `u_loc` is uniform on [0, 1] and `quantile(LogUniform(...))` is a
+# valid inverse-CDF transform. Concentrates samples toward smaller footprints, where adding a
+# location changes per-location seed density (and its marginal effect) fastest.
+u_loc = (scens.min_iv_locations .- min_loc_bounds[1]) ./ (min_loc_bounds[2] - min_loc_bounds[1])
+scens[!, :min_iv_locations] = round.(Int64, quantile.(LogUniform(min_loc_bounds...), u_loc))
+
+# Log-triangular total seeding budget. The sampled value is uniform over a regular grid, so `u`
+# is uniform on [0, 1] and applying a triangular inverse-CDF in log10-space is a valid transform.
+# The mode sits at `N_seed_peak`, keeping samples dense around realistic deployment sizes while
+# the linear upper tail still reaches the 1e8 feasibility limit (~⅓ of samples land above 1e7 —
+# the price of retaining 1e8 samples for the rest of the analysis).
 u = (scens.N_seed_CA .- N_seed_bounds[1]) ./ (N_seed_bounds[2] - N_seed_bounds[1])
-N_seed_total = N_seed_bounds[1] .* (N_seed_bounds[2] / N_seed_bounds[1]) .^ u
+log_budget = TriangularDist(log10(N_seed_bounds[1]), log10(N_seed_bounds[2]), log10(N_seed_peak))
+N_seed_total = 10.0 .^ quantile.(log_budget, u)
 
 for (group, weight) in pairs(N_seed_weights)
     scens[!, group] = N_seed_total .* weight
