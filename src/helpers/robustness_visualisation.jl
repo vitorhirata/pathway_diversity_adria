@@ -14,11 +14,11 @@ static plots, `scenario_names`, `dhw_scenarios`, `n_dhw`, `option_colors`, `opti
 
 # ── Shared presentation constants ─────────────────────────────────────────────
 
-# Pathways figures (6 = worst/best × 3 metrics; 3 = metric panels)
+# Pathways figures (9 = GBR/worst/best × 3 metrics, grouped by metric; 3 = metric panels)
 metric_labels = [
-    "Years >20% coral cover\n(worst reefs)", "Years >20% coral cover\n(best reefs)",
-    "Cumulative cover\n(worst reefs)", "Cumulative cover\n(best reefs)",
-    "Cumulative evenness\n(worst reefs)", "Cumulative evenness\n(best reefs)"
+    "Years >20% coral cover\n(GBR)", "Years >20% coral cover\n(worst reefs)", "Years >20% coral cover\n(best reefs)",
+    "Cumulative cover\n(GBR)", "Cumulative cover\n(worst reefs)", "Cumulative cover\n(best reefs)",
+    "Cumulative evenness\n(GBR)", "Cumulative evenness\n(worst reefs)", "Cumulative evenness\n(best reefs)"
 ]
 metric_titles = ["Years >20% coral cover", "Cumulative cover", "Cumulative evenness"]
 
@@ -81,21 +81,21 @@ end
 """
     plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, ps)
 
-Figure B — per starting option, median CVaR tail ratio with min/max whiskers across the 6 metric
-variants (worst/best × 3 metrics), dodged by option. `ps` is the parameter-set NamedTuple
-`(dhw, N_seed, n_locations)`.
+Figure B — per starting option, median ratio with min/max whiskers across the 9 metric variants
+(GBR/worst/best per metric, grouped by metric), dodged by option. `ps` is the parameter-set
+NamedTuple `(dhw, N_seed, n_locations)`.
 """
 function plot_pathways_cvar(
     med, lo, hi, option_names, option_colors, option_labels, ps
 )
-    fig = Figure(size=(1100, 480))
+    fig = Figure(size=(1300, 480))
     ax = Axis(fig[1, 1];
-        xticks=(1:6, metric_labels),
+        xticks=(1:9, metric_labels),
         xticklabelsize=11,
         ylabel="Relative performance against counterfactual"
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
-    vlines!(ax, [2.5, 4.5]; color=:gray70, linewidth=1, linestyle=:dash)
+    vlines!(ax, [3.5, 6.5]; color=:gray70, linewidth=1, linestyle=:dash)
 
     n_dodge = n_options
     dodge_width = 0.6
@@ -103,7 +103,7 @@ function plot_pathways_cvar(
         all(isnan, med[o_i, :]) && continue
         color = option_colors[o_i]
         offset = (o_i - (n_dodge + 1) / 2) * (dodge_width / n_dodge)
-        x = (1:6) .+ offset
+        x = (1:9) .+ offset
         scatter!(ax, x, med[o_i, :]; color, markersize=10)
         errorbars!(
             ax, x, med[o_i, :], med[o_i, :] .- lo[o_i, :], hi[o_i, :] .- med[o_i, :];
@@ -134,15 +134,15 @@ function plot_pathways_weighted(
     weighted_tail_stats, option_names, option_colors, option_labels, ps;
     point_stat::Symbol=:median
 )
-    fig = Figure(size=(1100, 480))
+    fig = Figure(size=(1300, 480))
     ax = Axis(fig[1, 1];
-        xticks=(1:6, metric_labels),
+        xticks=(1:9, metric_labels),
         xticklabelsize=11,
         ylabel="Prob.-weighted performance against \ncounterfactual (no interv.)",
         title="Weighted pathway robustness ($(point_stat), P10–P90) — $(_param_title(ps))"
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
-    vlines!(ax, [2.5, 4.5]; color=:gray70, linewidth=1, linestyle=:dash)
+    vlines!(ax, [3.5, 6.5]; color=:gray70, linewidth=1, linestyle=:dash)
 
     n_dodge = n_options
     dodge_width = 0.6

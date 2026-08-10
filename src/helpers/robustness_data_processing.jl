@@ -41,6 +41,18 @@ function delta_tail_ratio(
     return bot_ratio, top_ratio, raw
 end
 
+"""
+    delta_region_ratio(opt, cf; norm=0.0) -> Float64
+
+Whole-of-GBR counterpart of [`delta_tail_ratio`]: the mean delta (opt − cf) over **all** reefs,
+normalized by the same `norm` (`mean(cf)` when `norm` is 0, matching the tail ratios). For
+cumulative-cover / evenness this equals `sum(opt − cf) / sum(cf)` — the total region benefit as
+a fraction of the counterfactual. Directly comparable to the worst/best tail ratios.
+"""
+function delta_region_ratio(opt::AbstractVector, cf::AbstractVector; norm::Real=0.0)
+    return mean(opt .- cf) / (iszero(norm) ? mean(cf) : norm)
+end
+
 # ── Base metrics and windowing ────────────────────────────────────────────────
 
 """
@@ -277,35 +289,43 @@ end
     pathways_cvar_ranges(option_names, option_pathways, opt_metric_mats, cf_metric_full;
         tail_fraction, seed_years) -> (med, lo, hi)
 
-Per starting option: median with min/max of per-pathway CVaR tail ratios across the 6 metric
-variants (worst/best × 3 metrics). Each output is an `(n_options, 6)` matrix; options with no
-pathways stay `NaN`. Metric 1 (`n_yrs_above`) uses `norm=seed_years` as its zero-guard, matching
-Figures B/C; metrics 2 and 3 use the default counterfactual-mean norm. This is the computation
-Figure B (`plot_pathways_cvar`) plots.
+Per starting option: median with min/max of per-pathway ratios across the 9 metric variants
+(GBR / worst / best per metric, grouped by metric). Column order is
+`[m1 GBR, m1 worst, m1 best, m2 GBR, m2 worst, m2 best, m3 GBR, m3 worst, m3 best]`. Each output
+is an `(n_options, 9)` matrix; options with no pathways stay `NaN`. Metric 1 (`n_yrs_above`) uses
+`norm=seed_years` as its zero-guard, matching Figures B/C; metrics 2 and 3 use the default
+counterfactual-mean norm. The GBR column is the whole-region ratio ([`delta_region_ratio`]); the
+worst/best columns are the tail ratios ([`delta_tail_ratio`]). This is the computation Figure B
+(`plot_pathways_cvar`) plots.
 """
 function pathways_cvar_ranges(
     option_names, option_pathways, opt_metric_mats, cf_metric_full;
     tail_fraction, seed_years
 )
     n_options = length(option_names)
-    med = fill(NaN, n_options, 6)
-    lo = fill(NaN, n_options, 6)
-    hi = fill(NaN, n_options, 6)
+    # Per-metric zero-guard norm: seed_years for n_yrs_above, default (mean(cf)) for cover/evenness.
+    norms = (seed_years, 0.0, 0.0)
+    med = fill(NaN, n_options, 9)
+    lo = fill(NaN, n_options, 9)
+    hi = fill(NaN, n_options, 9)
 
     for (o_i, option) in enumerate(option_names)
         idxs = option_pathways[option]
         isempty(idxs) && continue
 
-        # per-pathway CVaR ratios: rows = pathways, cols = 6 metric variants
-        ratios = Array{Float64}(undef, length(idxs), 6)
+        # per-pathway ratios: rows = pathways, cols = 9 variants (GBR/worst/best × 3 metrics)
+        ratios = Array{Float64}(undef, length(idxs), 9)
         for (p, s) in enumerate(idxs)
-            b1, t1, _ = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction=tail_fraction, norm=seed_years)
-            b2, t2, _ = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction=tail_fraction)
-            b3, t3, _ = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction=tail_fraction)
-            ratios[p, :] = [b1, t1, b2, t2, b3, t3]
+            for m in 1:3
+                opt = opt_metric_mats[m][:, s]
+                cf = cf_metric_full[m]
+                g = delta_region_ratio(opt, cf; norm=norms[m])
+                b, t, _ = delta_tail_ratio(opt, cf; tail_fraction=tail_fraction, norm=norms[m])
+                ratios[p, (3 * (m - 1) + 1):(3 * m)] = [g, b, t]
+            end
         end
 
-        for m in 1:6
+        for m in 1:9
             med[o_i, m] = median(ratios[:, m])
             lo[o_i, m] = minimum(ratios[:, m])
             hi[o_i, m] = maximum(ratios[:, m])
@@ -649,8 +669,9 @@ end
     aggregate_metric(intervention, counterfactual, reference, probs; tail_frac=0.05)
 
 `intervention` is `nreefs × npathways`, `counterfactual` is length `nreefs`, `probs` is length
-`npathways`. Returns `(top, bottom, n_eff)` where `top`/`bottom` are `pathway_tail_stats`
-named tuples for the best/worst reef tails and `n_eff` is the Kish effective sample size.
+`npathways`. Returns `(region, top, bottom, n_eff)` where `region`/`top`/`bottom` are
+`pathway_tail_stats` named tuples for the whole-GBR ratio / best reef tail / worst reef tail, and
+`n_eff` is the Kish effective sample size.
 """
 function aggregate_metric(
     intervention::AbstractMatrix, counterfactual::AbstractVector, reference::Real,
@@ -662,15 +683,18 @@ function aggregate_metric(
     @assert all(probs .>= 0)
     @assert isapprox(sum(probs), 1.0; atol=1e-5)
 
+    Mregion = Vector{Float64}(undef, npaths)  # whole-GBR ratio (all reefs)
     Mplus = Vector{Float64}(undef, npaths)   # top tail (best reefs)
     Mminus = Vector{Float64}(undef, npaths)  # bottom tail (worst reefs)
     for p in 1:npaths
+        Mregion[p] = delta_region_ratio(intervention[:, p], counterfactual; norm=reference)
         Mminus[p], Mplus[p], _ = delta_tail_ratio(
             intervention[:, p], counterfactual; tail_fraction=tail_frac, norm=reference
         )
     end
 
     return (
+        region=pathway_tail_stats(Mregion, probs),
         top=pathway_tail_stats(Mplus, probs),
         bottom=pathway_tail_stats(Mminus, probs),
         n_eff=1 / sum(probs .^ 2)
@@ -698,9 +722,9 @@ end
     compute_weighted_tail_stats(option_names, option_pathways, weighted_metrics, prob_map, rs;
         tail_fraction)
 
-Tidy per (starting option × metric × tail) table of probability-weighted tail statistics.
+Tidy per (starting option × metric × variant) table of probability-weighted statistics.
 `weighted_metrics` is a vector of `(name, intervention_matrix, counterfactual_column, reference)`
-tuples. `metric_idx` 1–6 matches `metric_labels` ordering (worst/best interleaved per metric).
+tuples. `metric_idx` 1–9 matches `metric_labels` ordering (GBR/worst/best grouped per metric).
 """
 function compute_weighted_tail_stats(
     option_names, option_pathways, weighted_metrics, prob_map, rs; tail_fraction
@@ -718,7 +742,9 @@ function compute_weighted_tail_stats(
         for (m, (name, mat, cf, ref)) in enumerate(weighted_metrics)
             res = aggregate_metric(mat[:, idxs], cf, ref, probs; tail_frac=tail_fraction)
             for (tail_name, stats, metric_idx) in (
-                ("worst", res.bottom, 2 * (m - 1) + 1), ("best", res.top, 2 * m)
+                ("gbr", res.region, 3 * (m - 1) + 1),
+                ("worst", res.bottom, 3 * (m - 1) + 2),
+                ("best", res.top, 3 * m)
             )
                 push!(weighted_tail_stats, (
                     string(option), name, metric_idx, tail_name,
