@@ -30,18 +30,27 @@ aggreg_metric_labels = [
 ]
 boxplot_metric_labels = ["Years >20% coral cover", "Cumulative cover", "Cumulative evenness"]
 
+# ── Parameter-set filename / label helpers ────────────────────────────────────
+
+# Compact scientific notation for seed budgets, e.g. 1_000_000 → "1e6".
+_sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(round(c; digits=1))e$e")
+# Filename suffix and human title for a parameter set NamedTuple `(dhw, N_seed, n_locations)`.
+_param_suffix(ps) = "dhw$(ps.dhw)_n$(_sci(ps.N_seed))_l$(ps.n_locations)"
+_param_title(ps) = "dhw $(ps.dhw), N_seed $(_sci(ps.N_seed)), $(ps.n_locations) locs"
+
 # ── Pathways figures ──────────────────────────────────────────────────────────
 
 """
     plot_pathways_boxplot(option_names, option_pathways, opt_metric_mats, cf_metric_full,
-        option_colors, option_labels, sel_rcp, sel_dhw)
+        option_colors, option_labels, ps)
 
 Figure A — per starting option, boxplots of per-reef deltas (opt − cf) pooled over all reefs ×
-all downstream pathways, one panel per base metric.
+all downstream pathways, one panel per base metric. `ps` is the parameter-set NamedTuple
+`(dhw, N_seed, n_locations)`.
 """
 function plot_pathways_boxplot(
     option_names, option_pathways, opt_metric_mats, cf_metric_full,
-    option_colors, option_labels, sel_rcp, sel_dhw
+    option_colors, option_labels, ps
 )
     fig = Figure(size=(1200, 450))
     for (m_i, title) in enumerate(metric_titles)
@@ -64,24 +73,20 @@ function plot_pathways_boxplot(
             boxplot!(ax, fill(o_i, length(y)), y; color=option_colors[o_i])
         end
     end
-    save(
-        joinpath(
-            pd_config["plot_output_path"],
-            "robustness_pathways_boxplot_rcp$(sel_rcp)_dhw$(sel_dhw).png"
-        ),
-        fig; px_per_unit=2
-    )
-    @info "Saved robustness_pathways_boxplot_rcp$(sel_rcp)_dhw$(sel_dhw).png"
+    fname = "robustness_pathways_boxplot_$(_param_suffix(ps)).png"
+    save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
+    @info "Saved $(fname)"
 end
 
 """
-    plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, sel_rcp, sel_dhw)
+    plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, ps)
 
 Figure B — per starting option, median CVaR tail ratio with min/max whiskers across the 6 metric
-variants (worst/best × 3 metrics), dodged by option.
+variants (worst/best × 3 metrics), dodged by option. `ps` is the parameter-set NamedTuple
+`(dhw, N_seed, n_locations)`.
 """
 function plot_pathways_cvar(
-    med, lo, hi, option_names, option_colors, option_labels, sel_rcp, sel_dhw
+    med, lo, hi, option_names, option_colors, option_labels, ps
 )
     fig = Figure(size=(1100, 480))
     ax = Axis(fig[1, 1];
@@ -112,25 +117,21 @@ function plot_pathways_cvar(
         title="Starting option", framevisible=false
     )
 
-    save(
-        joinpath(
-            pd_config["plot_output_path"],
-            "robustness_pathways_rcp$(sel_rcp)_dhw$(sel_dhw).png"
-        ),
-        fig; px_per_unit=2
-    )
-    @info "Saved robustness_pathways_rcp$(sel_rcp)_dhw$(sel_dhw).png"
+    fname = "robustness_pathways_$(_param_suffix(ps)).png"
+    save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
+    @info "Saved $(fname)"
 end
 
 """
     plot_pathways_weighted(weighted_tail_stats, option_names, option_colors, option_labels,
-        sel_rcp, sel_dhw; point_stat=:median)
+        ps; point_stat=:median)
 
 Figure C — same layout as Figure B, but points come from the probability-weighted distribution:
-point = `point_stat` (:median or :mean), whiskers span P10–P90.
+point = `point_stat` (:median or :mean), whiskers span P10–P90. `ps` is the parameter-set
+NamedTuple `(dhw, N_seed, n_locations)`.
 """
 function plot_pathways_weighted(
-    weighted_tail_stats, option_names, option_colors, option_labels, sel_rcp, sel_dhw;
+    weighted_tail_stats, option_names, option_colors, option_labels, ps;
     point_stat::Symbol=:median
 )
     fig = Figure(size=(1100, 480))
@@ -138,7 +139,7 @@ function plot_pathways_weighted(
         xticks=(1:6, metric_labels),
         xticklabelsize=11,
         ylabel="Prob.-weighted performance against \ncounterfactual (no interv.)",
-        title="Weighted pathway robustness ($(point_stat), P10–P90) — RCP $(sel_rcp), dhw $(sel_dhw)"
+        title="Weighted pathway robustness ($(point_stat), P10–P90) — $(_param_title(ps))"
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
     vlines!(ax, [2.5, 4.5]; color=:gray70, linewidth=1, linestyle=:dash)
@@ -164,14 +165,9 @@ function plot_pathways_weighted(
         title="Starting option", framevisible=false
     )
 
-    save(
-        joinpath(
-            pd_config["plot_output_path"],
-            "robustness_pathways_weighted_$(point_stat)_rcp$(sel_rcp)_dhw$(sel_dhw).png"
-        ),
-        fig; px_per_unit=2
-    )
-    @info "Saved robustness_pathways_weighted_$(point_stat)_rcp$(sel_rcp)_dhw$(sel_dhw).png"
+    fname = "robustness_pathways_weighted_$(point_stat)_$(_param_suffix(ps)).png"
+    save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
+    @info "Saved $(fname)"
 end
 
 """
@@ -186,7 +182,6 @@ function plot_robustness_param_scatter(rob_df, option_names, option_colors, opti
     # Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed then n_locations.
     combos = sort(unique([(r.N_seed, r.n_locations) for r in eachrow(rob_df)]))
     combo_idx = Dict(c => i for (i, c) in enumerate(combos))
-    _sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(round(c; digits=1))e$e")
     combo_labels = ["$(_sci(c[1])) seeds · $(c[2]) locs" for c in combos]
 
     fig = Figure(size=(900, 480))
@@ -247,8 +242,6 @@ spread via [`panel_tau_diversity_robustness`]. `rob_div_df` is the output of
 function plot_robustness_vs_diversity(
     rob_div_df, option_names, option_colors, option_labels
 )
-    _sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c))e$e" : "$(round(c; digits=1))e$e")
-
     n_seeds = sort(unique(rob_div_df.N_seed))       # rows (grid y-axis = number of seeds)
     n_locs = sort(unique(rob_div_df.n_locations))   # columns (grid x-axis = number of locations)
     n_r, n_c = length(n_seeds), length(n_locs)

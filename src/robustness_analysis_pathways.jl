@@ -45,25 +45,21 @@ n_options = length(option_names)
 
 # Parameters to analyse
 tail_fraction = 0.03
-sel_rcp = 45
-sel_dhw = 7
-sel_N_seed = 1e6
-sel_n_locations = 200
 
-# ── Compute per-reef metrics and group pathways ───────────────────────────────
+# Parameter sets to plot: one set of figures A/B/C per entry. Each is a NamedTuple
+# `(dhw, N_seed, n_locations)`. Mirrors pd_main.jl's `boxplot_configs`/`lockin_configs` style.
+param_sets = [
+    (dhw=7, N_seed=1e6, n_locations=100),
+    (dhw=7, N_seed=1e7, n_locations=100),
+    (dhw=7, N_seed=1e7, n_locations=500),
+    (dhw=7, N_seed=1e8, n_locations=100),
+    (dhw=7, N_seed=1e8, n_locations=500)
+]
+
+# ── Compute per-reef metrics (parameter-independent) ──────────────────────────
 
 nyrs, ctac, cfd = reef_metrics(rs)
-
-option_pathways = group_pathways_by_starting_option(
-    rs, option_names;
-    sel_rcp, sel_dhw, sel_N_seed, sel_n_locations,
-    seed_year_start, seed_years, pd_frequency, N_seed_weights
-)
-cf_idx = find_counterfactual(rs, sel_dhw, sel_rcp)
-
-# Per-reef metric matrices (intervention) and matching counterfactual columns
 opt_metric_mats = (nyrs, ctac, cfd)
-cf_metric_full = (nyrs[:, cf_idx], ctac[:, cf_idx], cfd[:, cf_idx])
 
 # Fixed colour per starting option, shared across all plots (first 5 Wong colors).
 option_color_map = Dict(
@@ -77,42 +73,58 @@ option_colors = [option_color_map[string(o)] for o in option_names]
 # Pretty option labels: "heat_stress" → "Heat stress"
 option_labels = [uppercasefirst(replace(string(o), "_" => " ")) for o in option_names]
 
-# ── Figure A — boxplot per starting option (per-reef deltas pooled over paths) ─
+# ── Figures A/B/C — one set of figures per parameter set ──────────────────────
+#
+#   For each parameter set (dhw, N_seed, n_locations): group pathways by starting option, then
+#   draw Figure A (per-reef delta boxplots), Figure B (CVaR tail-ratio ranges) and Figure C
+#   (probability-weighted tail stats). Filenames encode the used dhw / N_seed / n_locations.
 
-plot_pathways_boxplot(
-    option_names, option_pathways, opt_metric_mats, cf_metric_full,
-    option_colors, option_labels, sel_rcp, sel_dhw
-)
+# Pathway adoption probabilities (Figure C), keyed by option_ts. From pd_main.jl's
+# scenario_probabilities.csv.
+prob_csv_path = ""
 
-# ── Figure B — CVaR range with error bars per starting option ─────────────────
+for ps in param_sets
+    option_pathways = group_pathways_by_starting_option(
+        rs, option_names;
+        sel_dhw=ps.dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
+        seed_year_start, seed_years, pd_frequency, N_seed_weights
+    )
+    cf_idx = find_counterfactual(rs, ps.dhw)
+    cf_metric_full = (nyrs[:, cf_idx], ctac[:, cf_idx], cfd[:, cf_idx])
 
-# Per starting option: median with min/max whiskers of per-pathway CVaR ratios,
-# across the 6 metric variants (worst/best × 3 metrics).
-med = fill(NaN, n_options, 6)
-lo = fill(NaN, n_options, 6)
-hi = fill(NaN, n_options, 6)
+    # Figure A — per-reef delta boxplots pooled over pathways
+    plot_pathways_boxplot(
+        option_names, option_pathways, opt_metric_mats, cf_metric_full,
+        option_colors, option_labels, ps
+    )
 
-for (o_i, option) in enumerate(option_names)
-    idxs = option_pathways[option]
-    isempty(idxs) && continue
+    # Figure B — per starting option, median with min/max whiskers of per-pathway CVaR ratios,
+    # across the 6 metric variants (worst/best × 3 metrics).
+    med, lo, hi = pathways_cvar_ranges(
+        option_names, option_pathways, opt_metric_mats, cf_metric_full;
+        tail_fraction, seed_years
+    )
+    plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, ps)
 
-    # per-pathway CVaR ratios: rows = pathways, cols = 6 metric variants
-    ratios = Array{Float64}(undef, length(idxs), 6)
-    for (p, s) in enumerate(idxs)
-        b1, t1, _ = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction=tail_fraction, norm=seed_years)
-        b2, t2, _ = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction=tail_fraction)
-        b3, t3, _ = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction=tail_fraction)
-        ratios[p, :] = [b1, t1, b2, t2, b3, t3]
-    end
-
-    for m in 1:6
-        med[o_i, m] = median(ratios[:, m])
-        lo[o_i, m] = minimum(ratios[:, m])
-        hi[o_i, m] = maximum(ratios[:, m])
-    end
+    # Figure C — probability-weighted tail stats. Weight the per-pathway scalars by pathway
+    # adoption probability and report P10 / Median / Mean / P90, top and bottom kept separate.
+    prob_map = load_pathway_probabilities(
+        prob_csv_path; sel_N_seed=ps.N_seed, sel_dhw=ps.dhw, sel_n_locations=ps.n_locations
+    )
+    # (metric name, intervention matrix, counterfactual column, reference constant)
+    weighted_metrics = [
+        ("Years >20% coral cover", nyrs, cf_metric_full[1], float(seed_years)),
+        ("Cumulative cover", ctac, cf_metric_full[2], mean(cf_metric_full[2])),
+        ("Cumulative evenness", cfd, cf_metric_full[3], mean(cf_metric_full[3]))
+    ]
+    weighted_tail_stats = compute_weighted_tail_stats(
+        option_names, option_pathways, weighted_metrics, prob_map, rs; tail_fraction=tail_fraction
+    )
+    plot_pathways_weighted(
+        weighted_tail_stats, option_names, option_colors, option_labels, ps;
+        point_stat=:median
+    )
 end
-
-plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, sel_rcp, sel_dhw)
 
 # ── Aggregated robustness across DHW scenarios and parameter sets ─────────────
 #
@@ -121,11 +133,11 @@ plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, sel_
 #   parameter set), report P10 / median / P90 of that worst-case robustness over pathways.
 
 dhw_scenarios = [2, 7, 10]  # all DHW members present in the run
-param_sets = detect_param_sets(rs, sel_rcp; N_seed_weights)
+param_sets_nl = detect_param_sets(rs; N_seed_weights)  # (N_seed, n_locations), worst over DHW
 
 rob_df = worst_dhw_robustness(
     rs, option_names, opt_metric_mats;
-    dhw_scenarios, param_sets, sel_rcp,
+    dhw_scenarios, param_sets=param_sets_nl,
     seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
 )
 CSV.write(joinpath(pd_config["plot_output_path"], "robustness.csv"), rob_df)
@@ -139,49 +151,18 @@ plot_robustness_param_scatter(rob_df, option_names, option_colors, option_labels
 #   For each (starting option × parameter set), rank the per-block option sequences by their
 #   worst-over-DHW robustness (min over the DHW scenarios each sequence occurs in) and keep the
 #   top 10. Sequences are the compact 4-block pathways (e.g. "heat_stress > balanced > ...").
+#   One CSV per (N_seed, n_locations) parameter set.
 
-top_pathways = top_robustness_pathways(
-    rs, option_names, opt_metric_mats;
-    dhw_scenarios, param_sets, sel_rcp,
-    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
-)
-CSV.write(
-    joinpath(pd_config["plot_output_path"], "top_robustness_pathways_rcp$(sel_rcp).csv"),
-    top_pathways
-)
-@info "Saved top_robustness_pathways_rcp$(sel_rcp).csv"
-
-# ── Probability-weighted tail statistics per starting option ──────────────────
-#
-#   Weight the per-pathway scalars by pathway adoption probability and
-#     report P10 / Median / Mean / P90 of the weighted distribution, top and bottom kept
-#     separate. Done per starting option.
-
-# Pathway adoption probabilities for the representative combo, keyed by option_ts
-prob_csv_path = ""
-
-prob_map = load_pathway_probabilities(
-    prob_csv_path; sel_N_seed, sel_dhw, sel_n_locations, sel_rcp
-)
-
-# (metric name, intervention matrix, counterfactual column, reference constant)
-weighted_metrics = [
-    ("Years >20% coral cover", nyrs, cf_metric_full[1], float(seed_years)),
-    ("Cumulative cover", ctac, cf_metric_full[2], mean(cf_metric_full[2])),
-    ("Cumulative evenness", cfd, cf_metric_full[3], mean(cf_metric_full[3]))
-]
-
-weighted_tail_stats = compute_weighted_tail_stats(
-    option_names, option_pathways, weighted_metrics, prob_map, rs; tail_fraction=tail_fraction
-)
-@info "Computed weighted_tail_stats" nrow(weighted_tail_stats)
-
-# ── Figure C — probability-weighted tail stats per starting option ────────────
-
-plot_pathways_weighted(
-    weighted_tail_stats, option_names, option_colors, option_labels, sel_rcp, sel_dhw;
-    point_stat=:median
-)
+for ps in param_sets_nl
+    top_pathways = top_robustness_pathways(
+        rs, option_names, opt_metric_mats;
+        dhw_scenarios, param_sets=[ps],
+        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+    )
+    fname = "top_robustness_pathways_n$(_sci(ps.N_seed))_l$(ps.n_locations).csv"
+    CSV.write(joinpath(pd_config["plot_output_path"], fname), top_pathways)
+    @info "Saved $(fname)"
+end
 
 # ── Figure D — robustness vs pathway diversity, facetted by parameter set ─────
 #

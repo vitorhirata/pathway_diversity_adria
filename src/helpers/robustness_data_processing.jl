@@ -204,7 +204,7 @@ function compact_pathway(option_ts, seed_year_start, seed_years, pd_frequency, m
 end
 
 """
-    group_pathways_by_starting_option(rs, option_names; sel_rcp, sel_dhw, sel_N_seed,
+    group_pathways_by_starting_option(rs, option_names; sel_dhw, sel_N_seed,
         sel_n_locations, seed_year_start, seed_years, pd_frequency, N_seed_weights)
 
 Scenario indices of the representative parameter combo, grouped by starting option.
@@ -214,7 +214,7 @@ Pathways that pause seeding — `:nothing` in *any* decision block, starting blo
 excluded: the robustness analysis compares continuously-seeded pathways only.
 """
 function group_pathways_by_starting_option(
-    rs, option_names; sel_rcp, sel_dhw, sel_N_seed, sel_n_locations,
+    rs, option_names; sel_dhw, sel_N_seed, sel_n_locations,
     seed_year_start, seed_years, pd_frequency, N_seed_weights
 )
     max_time = size(rs.seed_log, :timesteps)
@@ -222,8 +222,7 @@ function group_pathways_by_starting_option(
         rs.inputs.N_seed_CA .== sel_N_seed * N_seed_weights.N_seed_CA .&&
         rs.inputs.N_seed_TA .== sel_N_seed * N_seed_weights.N_seed_TA .&&
         rs.inputs.min_iv_locations .== sel_n_locations .&&
-        rs.inputs.dhw_scenario .== sel_dhw .&&
-        rs.inputs.RCP .== sel_rcp
+        rs.inputs.dhw_scenario .== sel_dhw
     combo_idxs = findall(combo_mask)
 
     seqs = Dict(
@@ -241,20 +240,19 @@ function group_pathways_by_starting_option(
 end
 
 """
-    find_counterfactual(rs, sel_dhw, sel_rcp) -> Int
+    find_counterfactual(rs, sel_dhw) -> Int
 
-Column in `rs` of the no-seeding counterfactual (zero total seeds) for the given dhw + rcp.
+Column in `rs` of the no-seeding counterfactual (zero total seeds) for the given dhw.
 pd_main.jl writes one such counterfactual per dhw_scenario.
 """
-function find_counterfactual(rs, sel_dhw, sel_rcp)
+function find_counterfactual(rs, sel_dhw)
     total_N_seed = rs.inputs.N_seed_TA .+ rs.inputs.N_seed_CA .+ rs.inputs.N_seed_CNA .+
                    rs.inputs.N_seed_SM .+ rs.inputs.N_seed_LM
     cf_idx = findfirst(
         (total_N_seed .== 0) .&
-        (rs.inputs.dhw_scenario .== sel_dhw) .&
-        (rs.inputs.RCP .== sel_rcp)
+        (rs.inputs.dhw_scenario .== sel_dhw)
     )
-    @assert !isnothing(cf_idx) "No counterfactual (zero total seeds) found in `rs` for dhw $(sel_dhw), RCP $(sel_rcp)."
+    @assert !isnothing(cf_idx) "No counterfactual (zero total seeds) found in `rs` for dhw $(sel_dhw)."
     return cf_idx
 end
 
@@ -276,16 +274,58 @@ function pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_fraction, s
 end
 
 """
-    detect_param_sets(rs, sel_rcp; N_seed_weights) -> Vector{NamedTuple}
+    pathways_cvar_ranges(option_names, option_pathways, opt_metric_mats, cf_metric_full;
+        tail_fraction, seed_years) -> (med, lo, hi)
 
-Unique `(N_seed, n_locations)` parameter sets among the *seeded* (non-counterfactual) scenarios
-at `sel_rcp`, sorted ascending by `N_seed`. `N_seed` is the total seed budget reconstructed from
+Per starting option: median with min/max of per-pathway CVaR tail ratios across the 6 metric
+variants (worst/best × 3 metrics). Each output is an `(n_options, 6)` matrix; options with no
+pathways stay `NaN`. Metric 1 (`n_yrs_above`) uses `norm=seed_years` as its zero-guard, matching
+Figures B/C; metrics 2 and 3 use the default counterfactual-mean norm. This is the computation
+Figure B (`plot_pathways_cvar`) plots.
+"""
+function pathways_cvar_ranges(
+    option_names, option_pathways, opt_metric_mats, cf_metric_full;
+    tail_fraction, seed_years
+)
+    n_options = length(option_names)
+    med = fill(NaN, n_options, 6)
+    lo = fill(NaN, n_options, 6)
+    hi = fill(NaN, n_options, 6)
+
+    for (o_i, option) in enumerate(option_names)
+        idxs = option_pathways[option]
+        isempty(idxs) && continue
+
+        # per-pathway CVaR ratios: rows = pathways, cols = 6 metric variants
+        ratios = Array{Float64}(undef, length(idxs), 6)
+        for (p, s) in enumerate(idxs)
+            b1, t1, _ = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction=tail_fraction, norm=seed_years)
+            b2, t2, _ = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction=tail_fraction)
+            b3, t3, _ = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction=tail_fraction)
+            ratios[p, :] = [b1, t1, b2, t2, b3, t3]
+        end
+
+        for m in 1:6
+            med[o_i, m] = median(ratios[:, m])
+            lo[o_i, m] = minimum(ratios[:, m])
+            hi[o_i, m] = maximum(ratios[:, m])
+        end
+    end
+
+    return med, lo, hi
+end
+
+"""
+    detect_param_sets(rs; N_seed_weights) -> Vector{NamedTuple}
+
+Unique `(N_seed, n_locations)` parameter sets among the *seeded* (non-counterfactual) scenarios,
+sorted ascending by `N_seed`. `N_seed` is the total seed budget reconstructed from
 the per-taxa columns; counterfactual rows (zero budget) are dropped.
 """
-function detect_param_sets(rs, sel_rcp; N_seed_weights)
+function detect_param_sets(rs; N_seed_weights)
     total_N_seed = rs.inputs.N_seed_TA .+ rs.inputs.N_seed_CA .+ rs.inputs.N_seed_CNA .+
                    rs.inputs.N_seed_SM .+ rs.inputs.N_seed_LM
-    mask = (rs.inputs.RCP .== sel_rcp) .& (total_N_seed .> 0)
+    mask = total_N_seed .> 0
     combos = unique(
         [(N_seed=total_N_seed[i], n_locations=Int(rs.inputs.min_iv_locations[i]))
          for i in findall(mask)]
@@ -294,7 +334,7 @@ function detect_param_sets(rs, sel_rcp; N_seed_weights)
 end
 
 """
-    pathway_worst_dhw_robustness(rs, option_names, opt_metric_mats, ps; dhw_scenarios, sel_rcp,
+    pathway_worst_dhw_robustness(rs, option_names, opt_metric_mats, ps; dhw_scenarios,
         seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction)
         -> Dict(option => Dict(option_ts => Float64))
 
@@ -305,7 +345,7 @@ per pathway and is independent of any starting-option aggregation.
 """
 function pathway_worst_dhw_robustness(
     rs, option_names, opt_metric_mats, ps;
-    dhw_scenarios, sel_rcp,
+    dhw_scenarios,
     seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
 )
     K = eltype(rs.inputs.option_ts)
@@ -314,10 +354,10 @@ function pathway_worst_dhw_robustness(
     for sel_dhw in dhw_scenarios
         pathways = group_pathways_by_starting_option(
             rs, option_names;
-            sel_rcp, sel_dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
+            sel_dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
             seed_year_start, seed_years, pd_frequency, N_seed_weights
         )
-        cf_idx = find_counterfactual(rs, sel_dhw, sel_rcp)
+        cf_idx = find_counterfactual(rs, sel_dhw)
         cf_full = (
             opt_metric_mats[1][:, cf_idx],
             opt_metric_mats[2][:, cf_idx],
@@ -338,7 +378,7 @@ function pathway_worst_dhw_robustness(
 end
 
 """
-    worst_dhw_robustness(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets, sel_rcp,
+    worst_dhw_robustness(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets,
         seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction) -> DataFrame
 
 For each (starting option × parameter set), summarise the per-pathway worst-over-DHW robustness
@@ -349,7 +389,7 @@ Options with no pathways in a parameter set are skipped.
 """
 function worst_dhw_robustness(
     rs, option_names, opt_metric_mats;
-    dhw_scenarios, param_sets, sel_rcp,
+    dhw_scenarios, param_sets,
     seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
 )
     df = DataFrame(;
@@ -360,7 +400,7 @@ function worst_dhw_robustness(
     for ps in param_sets
         worst = pathway_worst_dhw_robustness(
             rs, option_names, opt_metric_mats, ps;
-            dhw_scenarios, sel_rcp,
+            dhw_scenarios,
             seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
         )
 
@@ -526,7 +566,7 @@ end
 
 """
     top_robustness_pathways(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets,
-        sel_rcp, seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction,
+        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction,
         n_top=10) -> DataFrame
 
 Per (starting option × parameter set), rank the distinct per-block option sequences
@@ -538,7 +578,7 @@ cell is the `" > "`-joined option sequence (empty string when fewer than `n_top`
 """
 function top_robustness_pathways(
     rs, option_names, opt_metric_mats;
-    dhw_scenarios, param_sets, sel_rcp,
+    dhw_scenarios, param_sets,
     seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction, n_top::Int=10
 )
     max_time = size(rs.seed_log, :timesteps)
@@ -552,7 +592,7 @@ function top_robustness_pathways(
     for ps in param_sets
         worst = pathway_worst_dhw_robustness(
             rs, option_names, opt_metric_mats, ps;
-            dhw_scenarios, sel_rcp,
+            dhw_scenarios,
             seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
         )
 
@@ -638,20 +678,19 @@ function aggregate_metric(
 end
 
 """
-    load_pathway_probabilities(prob_csv_path; sel_N_seed, sel_dhw, sel_n_locations, sel_rcp)
+    load_pathway_probabilities(prob_csv_path; sel_N_seed, sel_dhw, sel_n_locations)
 
 Read pathway adoption probabilities for the representative combo, returning a
 `Dict(option_ts => probability)`.
 """
 function load_pathway_probabilities(
-    prob_csv_path; sel_N_seed, sel_dhw, sel_n_locations, sel_rcp
+    prob_csv_path; sel_N_seed, sel_dhw, sel_n_locations
 )
     prob_df = CSV.read(prob_csv_path, DataFrame)
     prob_df = prob_df[
         (prob_df.N_seed .== round(Int, sel_N_seed)) .&
         (prob_df.dhw_scenario .== sel_dhw) .&
-        (prob_df.n_locations .== sel_n_locations) .&
-        (prob_df.rcp .== sel_rcp), :]
+        (prob_df.n_locations .== sel_n_locations), :]
     return Dict(row.option_ts => row.probability for row in eachrow(prob_df))
 end
 
