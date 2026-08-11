@@ -83,6 +83,14 @@ option_labels = [uppercasefirst(replace(string(o), "_" => " ")) for o in option_
 # scenario_probabilities.csv.
 prob_csv_path = ""
 
+# Accumulate the plotted Figure B / Figure C data across parameter sets; written as one tidy CSV
+# each after the loop. `_add_params` prepends the parameter-set id columns.
+cvar_tables = DataFrame[]
+weighted_tables = DataFrame[]
+_add_params(df, ps) = insertcols(
+    df, 1, :dhw => ps.dhw, :N_seed => round(Int, ps.N_seed), :n_locations => ps.n_locations
+)
+
 for ps in param_sets
     option_pathways = group_pathways_by_starting_option(
         rs, option_names;
@@ -98,16 +106,17 @@ for ps in param_sets
         option_colors, option_labels, ps
     )
 
-    # Figure B — per starting option, median with min/max whiskers of per-pathway CVaR ratios,
-    # across the 6 metric variants (worst/best × 3 metrics).
-    med, lo, hi = pathways_cvar_ranges(
+    # Figure B — per starting option, median with P10–P90 whiskers of per-pathway ratios,
+    # across the 9 metric variants (GBR/worst/best × 3 metrics).
+    cvar_df = pathways_cvar_ranges(
         option_names, option_pathways, opt_metric_mats, cf_metric_full;
         tail_fraction, seed_years
     )
-    plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, ps)
+    plot_pathways_cvar(cvar_df, option_names, option_colors, option_labels, ps)
+    push!(cvar_tables, _add_params(cvar_df, ps))
 
     # Figure C — probability-weighted tail stats. Weight the per-pathway scalars by pathway
-    # adoption probability and report P10 / Median / Mean / P90, top and bottom kept separate.
+    # adoption probability and report P10 / Median / Mean / P90, GBR/worst/best kept separate.
     prob_map = load_pathway_probabilities(
         prob_csv_path; sel_N_seed=ps.N_seed, sel_dhw=ps.dhw, sel_n_locations=ps.n_locations
     )
@@ -124,7 +133,27 @@ for ps in param_sets
         weighted_tail_stats, option_names, option_colors, option_labels, ps;
         point_stat=:median
     )
+    # Tidy Figure C rows: machine metric label from metric_idx, keep median/mean/P10/P90.
+    # `select` is qualified: DataFrames and another loaded package (YAXArrays) both export it,
+    weighted_out = DataFrames.select(
+        weighted_tail_stats,
+        :start_option, :metric_idx,
+        :metric_idx => DataFrames.ByRow(i -> cvar_metric_labels[i]) => :metric,
+        :median, :mean, :p10, :p90
+    )
+    push!(weighted_tables, _add_params(weighted_out, ps))
 end
+
+# ── Save plotted Figure B / Figure C data (tidy, one row per option × metric variant) ─────────
+CSV.write(
+    joinpath(pd_config["plot_output_path"], "robustness_scores.csv"),
+    vcat(cvar_tables...)
+)
+CSV.write(
+    joinpath(pd_config["plot_output_path"], "robustness_scores_weighted_prob.csv"),
+    vcat(weighted_tables...)
+)
+@info "Saved robustness_scores.csv and robustness_scores_weighted_prob.csv"
 
 # ── Aggregated robustness across DHW scenarios and parameter sets ─────────────
 #

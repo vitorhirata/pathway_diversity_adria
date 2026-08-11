@@ -285,31 +285,40 @@ function pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_fraction, s
     return mean((b1, b2, b3, t1, t2, t3))
 end
 
+# Machine-readable labels for the 9 Figure B/C metric variants, indexed by `metric_idx` (1–9):
+# 3 base metrics × (gbr, worst, best), grouped by metric. Shared by both the Figure B table
+# ([`pathways_cvar_ranges`]) and the Figure C CSV so the two files use one metric vocabulary.
+const cvar_metric_labels = [
+    "years_above_gbr", "years_above_worst", "years_above_best",
+    "cumulative_cover_gbr", "cumulative_cover_worst", "cumulative_cover_best",
+    "cumulative_evenness_gbr", "cumulative_evenness_worst", "cumulative_evenness_best"
+]
+
 """
     pathways_cvar_ranges(option_names, option_pathways, opt_metric_mats, cf_metric_full;
-        tail_fraction, seed_years) -> (med, lo, hi)
+        tail_fraction, seed_years) -> DataFrame
 
-Per starting option: median with min/max of per-pathway ratios across the 9 metric variants
-(GBR / worst / best per metric, grouped by metric). Column order is
-`[m1 GBR, m1 worst, m1 best, m2 GBR, m2 worst, m2 best, m3 GBR, m3 worst, m3 best]`. Each output
-is an `(n_options, 9)` matrix; options with no pathways stay `NaN`. Metric 1 (`n_yrs_above`) uses
-`norm=seed_years` as its zero-guard, matching Figures B/C; metrics 2 and 3 use the default
-counterfactual-mean norm. The GBR column is the whole-region ratio ([`delta_region_ratio`]); the
-worst/best columns are the tail ratios ([`delta_tail_ratio`]). This is the computation Figure B
-(`plot_pathways_cvar`) plots.
+Tidy per (starting option × metric variant) table of per-pathway ratios across the 9 metric
+variants (GBR / worst / best per metric, grouped by metric; `metric_idx` 1–9 as in
+`cvar_metric_labels`). Columns: `start_option, metric_idx, metric, median, mean, p10, p90`, with
+statistics taken over the pathways of each starting option. Metric 1 (`n_yrs_above`) uses
+`norm=seed_years` as its zero-guard, matching Figure C; metrics 2 and 3 use the default
+counterfactual-mean norm. The GBR variant is the whole-region ratio ([`delta_region_ratio`]);
+worst/best are the tail ratios ([`delta_tail_ratio`]). This is the data Figure B
+(`plot_pathways_cvar`) plots (median point, P10–P90 whiskers).
 """
 function pathways_cvar_ranges(
     option_names, option_pathways, opt_metric_mats, cf_metric_full;
     tail_fraction, seed_years
 )
-    n_options = length(option_names)
     # Per-metric zero-guard norm: seed_years for n_yrs_above, default (mean(cf)) for cover/evenness.
     norms = (seed_years, 0.0, 0.0)
-    med = fill(NaN, n_options, 9)
-    lo = fill(NaN, n_options, 9)
-    hi = fill(NaN, n_options, 9)
+    df = DataFrame(;
+        start_option=String[], metric_idx=Int[], metric=String[],
+        median=Float64[], mean=Float64[], p10=Float64[], p90=Float64[]
+    )
 
-    for (o_i, option) in enumerate(option_names)
+    for option in option_names
         idxs = option_pathways[option]
         isempty(idxs) && continue
 
@@ -325,14 +334,16 @@ function pathways_cvar_ranges(
             end
         end
 
-        for m in 1:9
-            med[o_i, m] = median(ratios[:, m])
-            lo[o_i, m] = minimum(ratios[:, m])
-            hi[o_i, m] = maximum(ratios[:, m])
+        for mi in 1:9
+            col = ratios[:, mi]
+            push!(df, (
+                string(option), mi, cvar_metric_labels[mi],
+                median(col), mean(col), quantile(col, 0.10), quantile(col, 0.90)
+            ))
         end
     end
 
-    return med, lo, hi
+    return df
 end
 
 """

@@ -57,7 +57,7 @@ function plot_pathways_boxplot(
         ax = Axis(fig[1, m_i];
             xticks=(1:n_options, option_labels),
             xticklabelrotation=π / 4,
-            ylabel=m_i == 1 ? "Δ vs counterfactual (per reef)" : "",
+            ylabel=m_i == 1 ? "Difference in performance vs counterfactual (per reef)" : "",
             title=title
         )
         hlines!(ax, [0]; color=:black, linewidth=2)
@@ -79,19 +79,20 @@ function plot_pathways_boxplot(
 end
 
 """
-    plot_pathways_cvar(med, lo, hi, option_names, option_colors, option_labels, ps)
+    plot_pathways_cvar(cvar_df, option_names, option_colors, option_labels, ps)
 
-Figure B — per starting option, median ratio with min/max whiskers across the 9 metric variants
-(GBR/worst/best per metric, grouped by metric), dodged by option. `ps` is the parameter-set
-NamedTuple `(dhw, N_seed, n_locations)`.
+Figure B — per starting option, median ratio with P10–P90 whiskers across the 9 metric variants
+(GBR/worst/best per metric, grouped by metric), dodged by option. `cvar_df` is the tidy table
+from [`pathways_cvar_ranges`]; `ps` is the parameter-set NamedTuple `(dhw, N_seed, n_locations)`.
 """
 function plot_pathways_cvar(
-    med, lo, hi, option_names, option_colors, option_labels, ps
+    cvar_df, option_names, option_colors, option_labels, ps
 )
     fig = Figure(size=(1300, 480))
     ax = Axis(fig[1, 1];
         xticks=(1:9, metric_labels),
         xticklabelsize=11,
+        xticklabelrotation=π / 4,
         ylabel="Relative performance against counterfactual"
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
@@ -99,16 +100,17 @@ function plot_pathways_cvar(
 
     n_dodge = n_options
     dodge_width = 0.6
-    for (o_i, _) in enumerate(option_names)
-        all(isnan, med[o_i, :]) && continue
+    for (o_i, option) in enumerate(option_names)
+        df = cvar_df[cvar_df.start_option .== string(option), :]
+        isempty(df) && continue
+        sort!(df, :metric_idx)
+
         color = option_colors[o_i]
         offset = (o_i - (n_dodge + 1) / 2) * (dodge_width / n_dodge)
-        x = (1:9) .+ offset
-        scatter!(ax, x, med[o_i, :]; color, markersize=10)
-        errorbars!(
-            ax, x, med[o_i, :], med[o_i, :] .- lo[o_i, :], hi[o_i, :] .- med[o_i, :];
-            color, whiskerwidth=6
-        )
+        x = df.metric_idx .+ offset
+        med = df.median
+        scatter!(ax, x, med; color, markersize=10)
+        errorbars!(ax, x, med, med .- df.p10, df.p90 .- med; color, whiskerwidth=6)
     end
 
     Legend(fig[1, 2],
@@ -138,8 +140,8 @@ function plot_pathways_weighted(
     ax = Axis(fig[1, 1];
         xticks=(1:9, metric_labels),
         xticklabelsize=11,
-        ylabel="Prob.-weighted performance against \ncounterfactual (no interv.)",
-        title="Weighted pathway robustness ($(point_stat), P10–P90) — $(_param_title(ps))"
+        xticklabelrotation=π / 4,
+        ylabel="Probability weighted performance\nagainst counterfactual",
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
     vlines!(ax, [3.5, 6.5]; color=:gray70, linewidth=1, linestyle=:dash)
