@@ -16,8 +16,8 @@ This script only orchestrates: load results → compute metrics → make plots.
 
 include("src/common.jl")
 using GeoMakie, GraphMakie, CairoMakie
-include("src/helpers/robustness_data_processing.jl")
-include("src/helpers/robustness_visualisation.jl")
+include("src/data_processing/robustness.jl")
+include("src/visualization/robustness.jl")
 
 # ── Constants ─────────────────────────────────────────────
 
