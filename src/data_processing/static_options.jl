@@ -104,36 +104,44 @@ function seeding_derived(rs, sel)
 end
 
 """
-    static_performance_metrics(rs, sel) -> (; n_yrs_diff, cum_tac_diff)
+    static_performance_metrics(rs, sel) -> (; n_yrs_diff, cum_tac_diff, cum_fd_diff)
 
-Per-reef performance deltas vs the same-DHW counterfactual for parameter set `sel`. Both matrices
-are `(n_locs, n_dhw * n_options)`, ordered by `sel.iv_col(d, o)`:
+Per-reef performance deltas vs the same-DHW counterfactual for parameter set `sel`. Each matrix
+is `(n_locs, n_dhw * n_options)`, ordered by `sel.iv_col(d, o)`:
 - `n_yrs_diff`   : Δ count of timesteps with cover ≥ 20% habitable area (option − counterfactual).
 - `cum_tac_diff` : Δ cumulative absolute cover (km²·years, option − counterfactual).
+- `cum_fd_diff`  : Δ cumulative coral evenness (option − counterfactual).
+
+All metrics integrate over the full run (matching the static maps), not the robustness horizon.
 """
 function static_performance_metrics(rs, sel)
     m_tac = Array(ADRIA.metrics.total_absolute_cover(rs)) .* 1e-6  # km²
+    fd_arr = Array(ADRIA.metrics.coral_evenness(rs))
     loc_hab_area_km2 = rs.loc_area .* rs.loc_max_coral_cover .* 1e-6
     n_locs = size(m_tac, 2)
 
     # Per-scenario per-reef metrics
     nyrs(s) = Float64[count(m_tac[:, l, s] .>= 0.20 * loc_hab_area_km2[l]) for l in 1:n_locs]
     cumtac(s) = vec(sum(m_tac[:, :, s]; dims=1))  # (n_locs,), km²·years
+    cumfd(s) = vec(sum(fd_arr[:, :, s]; dims=1))  # (n_locs,)
 
     n_cols = sel.n_dhw * sel.n_options
     n_yrs_diff = Matrix{Float64}(undef, n_locs, n_cols)
     cum_tac_diff = Matrix{Float64}(undef, n_locs, n_cols)
+    cum_fd_diff = Matrix{Float64}(undef, n_locs, n_cols)
     for d in 1:sel.n_dhw
         cf_nyrs = nyrs(sel.cf_cols[d])
         cf_cumtac = cumtac(sel.cf_cols[d])
+        cf_cumfd = cumfd(sel.cf_cols[d])
         for o in 1:sel.n_options
             col = sel.iv_col(d, o)
             n_yrs_diff[:, col] .= nyrs(sel.opt_cols[d, o]) .- cf_nyrs
             cum_tac_diff[:, col] .= cumtac(sel.opt_cols[d, o]) .- cf_cumtac
+            cum_fd_diff[:, col] .= cumfd(sel.opt_cols[d, o]) .- cf_cumfd
         end
     end
 
-    return (; n_yrs_diff, cum_tac_diff)
+    return (; n_yrs_diff, cum_tac_diff, cum_fd_diff)
 end
 
 """

@@ -351,6 +351,55 @@ function plot_cum_tac_diff_maps(cum_tac_diff, total_seeds, active_mask, sel, cfg
     )
 end
 
+# ── Per-option metric histograms ──────────────────────────────────────────────
+
+"""
+    plot_metric_histograms(perf, sel, cfg; n_bins=30)
+
+Grid of per-reef Δ-vs-counterfactual histograms (rows = the 6 options, columns = the 3 metrics:
+years >20% cover, cumulative cover, cumulative evenness), one figure per DHW member. Every reef
+contributes to the distribution. Within a figure each metric column shares fixed bin edges across
+all option rows (from that column's data range over all options), so the 6 options are directly
+comparable; a dashed line marks Δ = 0.
+"""
+function plot_metric_histograms(perf, sel, cfg; n_bins=60)
+    metric_arrays = [perf.n_yrs_diff, perf.cum_tac_diff, perf.cum_fd_diff]
+    metric_titles = [
+        "Δ years above 20% cover", "Δ cumulative cover (km²·yr)", "Δ cumulative evenness"
+    ]
+
+    for d in 1:sel.n_dhw
+        opt_cols = [sel.iv_col(d, o) for o in 1:sel.n_options]
+        # Fixed bin edges per metric column, from the pooled data range over all options.
+        bin_edges = map(metric_arrays) do arr
+            vals = filter(isfinite, vec(arr[:, opt_cols]))
+            lo, hi = isempty(vals) ? (-0.5, 0.5) : extrema(vals)
+            lo == hi ? range(lo - 0.5, hi + 0.5; length=n_bins + 1) :
+                range(lo, hi; length=n_bins + 1)
+        end
+
+        fig = Figure(; size=(3 * 380, sel.n_options * 220))
+        Label(fig[0, 1:3],
+            "Per-reef performance vs counterfactual — $(dhw_model_names[d])";
+            font=:bold, fontsize=16
+        )
+        for (o, scen_name) in enumerate(scenario_names), m in 1:3
+            ax = Axis(
+                fig[o, m];
+                title=o == 1 ? metric_titles[m] : "",
+                ylabel=m == 1 ? string(scen_name) : "",
+                xlabel=o == sel.n_options ? "Δ vs counterfactual" : ""
+            )
+            vals = filter(isfinite, metric_arrays[m][:, sel.iv_col(d, o)])
+            isempty(vals) || hist!(ax, vals; bins=bin_edges[m], color=option_colors[o])
+            vlines!(ax, [0]; color=:black, linestyle=:dash, linewidth=1)
+        end
+        fname = "metric_histograms_dhw$(sel.dhw_scenarios[d])_$(_static_suffix(cfg)).png"
+        save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
+        @info "Saved $(fname)"
+    end
+end
+
 # ── Per-option time-series ────────────────────────────────────────────────────
 
 """

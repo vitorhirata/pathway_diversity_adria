@@ -204,6 +204,7 @@ plot_net_summary(
 
 static_plot_configs = [
     (RCP="45", N_seed=1e6, min_iv=300, gif_dhw=1),
+    (RCP="45", N_seed=1e7, min_iv=300, gif_dhw=1),
     (RCP="45", N_seed=1e8, min_iv=300, gif_dhw=1)
 ]
 
@@ -227,6 +228,7 @@ for cfg in static_plot_configs
     plot_total_seeds_map(seed.total_seeds, sel, cfg; seeds_dhw=1, colorrange=(0.0, 1e6))
     plot_nyrs_above_maps(perf.n_yrs_diff, seed.total_seeds, seed.active_mask, sel, cfg)
     plot_cum_tac_diff_maps(perf.cum_tac_diff, seed.total_seeds, seed.active_mask, sel, cfg)
+    plot_metric_histograms(perf, sel, cfg)
     plot_options_timeseries(rs, tsm, sel, options, cfg)
     #animate_seeding_maps(rs, dom, seed.seed_per_reef_per_ts_scen, sel, cfg; gif_dhw=cfg.gif_dhw)
 end
