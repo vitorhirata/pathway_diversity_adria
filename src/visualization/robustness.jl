@@ -38,6 +38,41 @@ _sci(n) = (e = floor(Int, log10(n)); c = n / 10^e; isinteger(c) ? "$(round(Int,c
 _param_suffix(ps) = "dhw$(ps.dhw)_n$(_sci(ps.N_seed))_l$(ps.n_locations)"
 _param_title(ps) = "dhw $(ps.dhw), N_seed $(_sci(ps.N_seed)), $(ps.n_locations) locs"
 
+# ── Shared drawing helpers ────────────────────────────────────────────────────
+
+# Horizontal dodge offset for option `o_i` of `n` options sharing a group of total width `width`.
+_dodge_offset(o_i, n, width) = (o_i - (n + 1) / 2) * (width / n)
+
+"""
+    _draw_option_series!(ax, x, point, p10, p90; color, marker=:circle, markersize=10,
+        whiskerwidth=6, line=false)
+
+Draw one starting option's point-with-whisker series: markers at `(x, point)` with P10–P90
+errorbars. `line=true` links the markers (`scatterlines!`) for across-parameter trends; callers
+using it must pass `x` already sorted. Shared by Figures B, C, the B/C comparison and the
+parameter scatter so the dodge/marker/errorbar styling stays in one place.
+"""
+function _draw_option_series!(
+    ax, x, point, p10, p90;
+    color, marker=:circle, markersize=10, whiskerwidth=6, line=false
+)
+    if line
+        scatterlines!(ax, x, point; color, marker, markersize)
+    else
+        scatter!(ax, x, point; color, marker, markersize)
+    end
+    errorbars!(ax, x, point, point .- p10, p90 .- point; color, whiskerwidth)
+end
+
+# Single-section "Starting option" colour legend, shared by Figures B, C and the parameter scatter.
+function _option_legend!(pos, option_colors, option_labels)
+    Legend(pos,
+        [MarkerElement(; marker=:circle, color=option_colors[i]) for i in eachindex(option_labels)],
+        option_labels;
+        title="Starting option", framevisible=false
+    )
+end
+
 # ── Pathways figures ──────────────────────────────────────────────────────────
 
 """
@@ -98,26 +133,16 @@ function plot_pathways_cvar(
     hlines!(ax, [0]; color=:black, linewidth=2)
     vlines!(ax, [3.5, 6.5]; color=:gray70, linewidth=1, linestyle=:dash)
 
-    n_dodge = n_options
-    dodge_width = 0.6
     for (o_i, option) in enumerate(option_names)
         df = cvar_df[cvar_df.start_option .== string(option), :]
         isempty(df) && continue
         sort!(df, :metric_idx)
 
-        color = option_colors[o_i]
-        offset = (o_i - (n_dodge + 1) / 2) * (dodge_width / n_dodge)
-        x = df.metric_idx .+ offset
-        med = df.median
-        scatter!(ax, x, med; color, markersize=10)
-        errorbars!(ax, x, med, med .- df.p10, df.p90 .- med; color, whiskerwidth=6)
+        x = df.metric_idx .+ _dodge_offset(o_i, n_options, 0.6)
+        _draw_option_series!(ax, x, df.median, df.p10, df.p90; color=option_colors[o_i])
     end
 
-    Legend(fig[1, 2],
-        [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
-        option_labels;
-        title="Starting option", framevisible=false
-    )
+    _option_legend!(fig[1, 2], option_colors, option_labels)
 
     fname = "robustness_pathways_$(_param_suffix(ps)).png"
     save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
@@ -146,26 +171,16 @@ function plot_pathways_weighted(
     hlines!(ax, [0]; color=:black, linewidth=2)
     vlines!(ax, [3.5, 6.5]; color=:gray70, linewidth=1, linestyle=:dash)
 
-    n_dodge = n_options
-    dodge_width = 0.6
     for (o_i, option) in enumerate(option_names)
         df = weighted_tail_stats[weighted_tail_stats.start_option .== string(option), :]
         isempty(df) && continue
         sort!(df, :metric_idx)
 
-        color = option_colors[o_i]
-        offset = (o_i - (n_dodge + 1) / 2) * (dodge_width / n_dodge)
-        x = df.metric_idx .+ offset
-        pt = df[!, point_stat]
-        scatter!(ax, x, pt; color, markersize=10)
-        errorbars!(ax, x, pt, pt .- df.p10, df.p90 .- pt; color, whiskerwidth=6)
+        x = df.metric_idx .+ _dodge_offset(o_i, n_options, 0.6)
+        _draw_option_series!(ax, x, df[!, point_stat], df.p10, df.p90; color=option_colors[o_i])
     end
 
-    Legend(fig[1, 2],
-        [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
-        option_labels;
-        title="Starting option", framevisible=false
-    )
+    _option_legend!(fig[1, 2], option_colors, option_labels)
 
     fname = "robustness_pathways_weighted_$(point_stat)_$(_param_suffix(ps)).png"
     save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
@@ -195,29 +210,17 @@ function plot_robustness_param_scatter(rob_df, option_names, option_colors, opti
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
 
-    n_dodge = n_options
-    dodge_width = 0.5
     for (o_i, option) in enumerate(option_names)
         df = rob_df[rob_df.start_option .== string(option), :]
         isempty(df) && continue
-        color = option_colors[o_i]
-        offset = (o_i - (n_dodge + 1) / 2) * (dodge_width / n_dodge)
-        x = [combo_idx[(r.N_seed, r.n_locations)] for r in eachrow(df)] .+ offset
+        x = [combo_idx[(r.N_seed, r.n_locations)] for r in eachrow(df)] .+
+            _dodge_offset(o_i, n_options, 0.5)
         order = sortperm(x)
-        x = x[order]
-        med = df.median[order]
-        scatterlines!(ax, x, med; color, markersize=10)
-        errorbars!(
-            ax, x, med, med .- df.p10[order], df.p90[order] .- med;
-            color, whiskerwidth=6
-        )
+        _draw_option_series!(ax, x[order], df.median[order], df.p10[order], df.p90[order];
+            color=option_colors[o_i], line=true)
     end
 
-    Legend(fig[1, 2],
-        [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
-        option_labels;
-        title="Starting option", framevisible=false
-    )
+    _option_legend!(fig[1, 2], option_colors, option_labels)
 
     save(
         joinpath(
@@ -319,6 +322,91 @@ function plot_robustness_vs_diversity(
         fig; px_per_unit=2
     )
     @info "Saved robustness_vs_diversity.png"
+end
+
+# Figure B/C comparison: worst/best variants only (GBR dropped), grouped by metric.
+# `comparison_metric_idxs` are positions in the 9-variant `cvar_metric_labels` vocabulary.
+comparison_metric_idxs = [2, 3, 5, 6, 8, 9]
+comparison_metric_labels = [
+    "Years >20%\n(worst)", "Years >20%\n(best)",
+    "Cum. cover\n(worst)", "Cum. cover\n(best)",
+    "Cum. evenness\n(worst)", "Cum. evenness\n(best)"
+]
+
+"""
+    plot_pathways_weighting_comparison(cvar_df, weighted_tail_stats, option_names,
+        option_colors, option_labels, ps; point_stat=:median)
+
+Figures B and C overlaid — for each starting option × metric variant, the **unweighted**
+per-pathway range (Figure B, circle) and the **probability-weighted** range (Figure C, diamond)
+are drawn side by side with a small horizontal offset, connected by a thin line, so their
+absolute values *and* the shift from probability-weighting are both readable. Both series keep
+their P10–P90 whiskers. The GBR variant is dropped: only worst/best × 3 metrics (6 x positions).
+`point_stat` (:median or :mean) selects the weighted point statistic; the unweighted point is
+always the median. `ps` is the parameter-set NamedTuple `(dhw, N_seed, n_locations)`.
+"""
+function plot_pathways_weighting_comparison(
+    cvar_df, weighted_tail_stats, option_names, option_colors, option_labels, ps;
+    point_stat::Symbol=:median
+)
+    # Map the 6 kept metric variants to compact x positions 1..6.
+    xpos = Dict(mi => p for (p, mi) in enumerate(comparison_metric_idxs))
+
+    fig = Figure(size=(1300, 520))
+    ax = Axis(fig[1, 1];
+        xticks=(1:length(comparison_metric_idxs), comparison_metric_labels),
+        xticklabelsize=11,
+        xticklabelrotation=π / 4,
+        ylabel="Relative performance against counterfactual"
+    )
+    hlines!(ax, [0]; color=:black, linewidth=2)
+    vlines!(ax, [2.5, 4.5]; color=:gray70, linewidth=1, linestyle=:dash)
+
+    pair_offset = 0.055  # half-gap between the unweighted and weighted markers of one option
+
+    for (o_i, option) in enumerate(option_names)
+        color = option_colors[o_i]
+        offset = _dodge_offset(o_i, n_options, 0.72)
+
+        uw = cvar_df[cvar_df.start_option .== string(option), :]
+        wt = weighted_tail_stats[weighted_tail_stats.start_option .== string(option), :]
+        (isempty(uw) || isempty(wt)) && continue
+        uw = uw[in.(uw.metric_idx, Ref(comparison_metric_idxs)), :]
+        wt = wt[in.(wt.metric_idx, Ref(comparison_metric_idxs)), :]
+        sort!(uw, :metric_idx)
+        sort!(wt, :metric_idx)
+
+        base = [xpos[mi] for mi in uw.metric_idx] .+ offset
+        x_uw = base .- pair_offset
+        x_wt = [xpos[mi] for mi in wt.metric_idx] .+ offset .+ pair_offset
+
+        # Connector between the two estimates of the same option × metric variant.
+        for k in eachindex(base)
+            lines!(ax, [x_uw[k], x_wt[k]], [uw.median[k], wt[!, point_stat][k]];
+                color=(color, 0.5), linewidth=1)
+        end
+
+        # Unweighted (Figure B) — filled circle. Probability-weighted (Figure C) — filled diamond.
+        _draw_option_series!(ax, x_uw, uw.median, uw.p10, uw.p90;
+            color, marker=:circle, markersize=10, whiskerwidth=5)
+        _draw_option_series!(ax, x_wt, wt[!, point_stat], wt.p10, wt.p90;
+            color, marker=:diamond, markersize=11, whiskerwidth=5)
+    end
+
+    Legend(fig[1, 2],
+        [
+            [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
+            [MarkerElement(; marker=:circle, color=:gray40),
+             MarkerElement(; marker=:diamond, color=:gray40)]
+        ],
+        [option_labels, ["Unweighted", "Prob. weighted ($(point_stat))"]],
+        ["Starting option", "Weighting"];
+        framevisible=false
+    )
+
+    fname = "robustness_pathways_comparison_$(point_stat)_$(_param_suffix(ps)).png"
+    save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
+    @info "Saved $(fname)"
 end
 
 # ── Static-option figures ─────────────────────────────────────────────────────

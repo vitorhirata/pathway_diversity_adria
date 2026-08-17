@@ -133,6 +133,12 @@ for ps in param_sets
         weighted_tail_stats, option_names, option_colors, option_labels, ps;
         point_stat=:median
     )
+
+    # Figures B & C overlaid — unweighted vs probability-weighted ranges side by side, GBR dropped.
+    plot_pathways_weighting_comparison(
+        cvar_df, weighted_tail_stats, option_names, option_colors, option_labels, ps;
+        point_stat=:median
+    )
     # Tidy Figure C rows: machine metric label from metric_idx, keep median/mean/P10/P90.
     # `select` is qualified: DataFrames and another loaded package (YAXArrays) both export it,
     weighted_out = DataFrames.select(
