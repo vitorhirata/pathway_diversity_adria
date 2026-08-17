@@ -2,7 +2,7 @@
 Visualisation for the robustness analyses.
 
 Plotting functions for both `robustness_analysis_pathways.jl` and
-`robustness_analysis_static_options.jl`. Each function builds a Figure and *saves* it to
+`static_options.jl`. Each function builds a Figure and *saves* it to
 `pd_config["plot_output_path"]` (px_per_unit=2), then `@info`s the filename.
 
 This file is *included by* the main scripts and assumes `include("src/common.jl")` and a Makie

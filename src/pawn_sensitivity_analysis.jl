@@ -5,12 +5,12 @@ PAWN sensitivity analysis on local tail metrics and GBR-scale metrics.
   over hand-picked levels; only the bounds/levels of each distribution are specified here
 - the seeding option is crossed manually over the Sobol set (it is not a model-spec factor)
 - N_seed split by fixed group weights (N_seed_weights), as in
-  `robustness_analysis_static_options.jl`, instead of an equal 1/5 split
+  `static_options.jl`, instead of an equal 1/5 split
 - seeding_devices_per_m2 and a_adapt are varied factors
 - a counterfactual (no-seeding) scenario is added per dhw member
 - the PAWN output metrics are, at two scales:
   * local tail metrics, counterfactual-relative, as in
-    `robustness_analysis_static_options.jl`: for each of cumulative cover, years above 20%
+    `static_options.jl`: for each of cumulative cover, years above 20%
     cover, and cumulative evenness, the per-reef delta (option − counterfactual) is reduced
     to the mean of the bottom/top `tail_fraction` of reefs, normalized (worst/best reefs)
   * GBR-scale metrics: total absolute cover, relative shelter volume, relative juveniles and

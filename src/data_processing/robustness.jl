@@ -2,7 +2,7 @@
 Data processing for the robustness analyses.
 
 Shared analysis / metric-computation code for both `robustness_analysis_pathways.jl` (pathways
-grouped by starting option) and `robustness_analysis_static_options.jl` (one static option for
+grouped by starting option) and `static_options.jl` (one static option for
 the whole seeding window). No plotting lives here — see `robustness_visualisation.jl`.
 
 This file is *included by* the main scripts and assumes `include("src/common.jl")` has already

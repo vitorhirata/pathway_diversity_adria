@@ -1,7 +1,7 @@
 #=
 Robustness analysis for pathway seeding.
 
-Unlike `robustness_analysis_static_options.jl` (one static option applied for the whole
+Unlike `static_options.jl` (one static option applied for the whole
 seeding window), here each scenario is a *pathway*: seeding runs for `seed_years` and the
 option changes every `pd_frequency` years. Pathways are grouped by their **starting option**
 (the option active at `seed_year_start`), and we show the range of per-reef performance a

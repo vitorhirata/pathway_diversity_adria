@@ -2,7 +2,7 @@
 Compare the three ResultSets that feed the robustness analyses, to diagnose why they yield
 metrics of different magnitude. Loads:
 
-  1. `rs_static`     — a `robustness_analysis_static_options.jl` run. Single ResultSet that
+  1. `rs_static`     — a `static_options.jl` run. Single ResultSet that
                        already contains its counterfactual as scenario columns (option = -1),
                        unguided (option = 0) and the 5 guided options (option = 1:5).
   2. `rs_pathway`    — a pathway simulation as produced by `pd_main.jl` (`option_ts` per row).
@@ -28,7 +28,7 @@ robustness scripts, so magnitudes are apples-to-apples.
 include("src/common.jl")
 
 # ── Paths (fill in) ───────────────────────────────────────────────────────────
-static_path = ""       # robustness_analysis_static_options.jl run (intervention + counterfactual)
+static_path = ""       # static_options.jl run (intervention + counterfactual)
 pathway_path = ""      # pd_main.jl pathway simulation
 pathway_cf_path = ""   # robustness_analysis_pathways.jl counterfactual
 

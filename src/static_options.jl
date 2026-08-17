@@ -1,63 +1,71 @@
 #=
-Options experiment: compare five seeding strategy options under two DHW scenario members.
+Static seeding options: robustness + detail analysis.
 
-Design:
-- 5 options (from option_seed_preference) + unguided + counterfactual = 7 scenarios,
-  repeated once per DHW member
-- Only dhw_scenario varies; all other parameters are fixed
-- Scenario rows are laid out in blocks of `n_scens_per_dhw`, one block per DHW member:
-  row (d - 1) * n_scens_per_dhw + s → DHW member d, scenario s.
-  The last scenario of each block (s = n_scens_per_dhw) is that block's counterfactual.
+One static option is applied for the whole seeding window. Scenarios are swept over a parameter
+grid (N_seed budget, min_iv_locations, RCP, DHW); for each parameter set every option is compared
+against a no-intervention counterfactual of the same DHW member.
 
-To identify the DHW member and option for scenario i after running:
-    d = div(i - 1, n_scens_per_dhw) + 1   # dhw_scenarios[d] == rs.inputs.dhw_scenario[i]
-    s = mod1(i, n_scens_per_dhw)          # scenario_names[s], or counterfactual if s == 7
+Two analyses run on the single scenario table:
+1. Robustness — CVaR aggregation of every option vs its counterfactual over a set of parameter
+   sets (`summary_configs`), producing the aggregate / boxplot / net-summary figures.
+2. Detail plots — for a chosen set of parameter sets (`static_plot_configs`), the per-option GBR
+   maps (total seeds, Δ years-above-target, Δ cumulative cover), seeding-frequency histograms,
+   per-option time-series, and the per-scenario seeding GIF.
+
+Scenario generation follows the parameter-sweep layout (row = one option under one parameter set);
+each row carries an `:option` identifier (-1 = counterfactual, 0 = unguided, 1:5 = guided option).
+Analysis lives in `data_processing/{robustness,static_options}.jl`; plotting in
+`visualization/{robustness,static_options}.jl`. This script only orchestrates.
 =#
 
 include("src/common.jl")
 using GeoMakie, GraphMakie, CairoMakie, NaturalEarth
+include("src/data_processing/robustness.jl")
+include("src/visualization/robustness.jl")
+include("src/data_processing/static_options.jl")
+include("src/visualization/static_options.jl")
 
-RCP = "45"
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+rcps = ["45"]
+dhw_scenarios = [2, 7, 10]
 seed_years = 20
-dhw_scenarios = [2, 7]
+N_seed_totals = [1e6, 1e7, 1e8]
+min_iv_locations_list = [100, 300, 500]
+N_seed_weights = (
+    N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0
+)
+
+scenario_names = [
+    :heat_stress, :geographic_spread, :connectivity,
+    :functional_diversity, :balanced, :unguided
+]
+
+n_scenarios_per_dhw = 7  # 5 options + 1 unguided + 1 counterfactual
 n_dhw = length(dhw_scenarios)
-n_scens_per_dhw = 7          # 5 options + unguided + counterfactual
-n_options = n_scens_per_dhw - 1  # intervention scenarios (options + unguided)
+n_rcps = length(rcps)
+n_options = length(scenario_names)  # 6 (excludes counterfactual)
 
-# Row/column helpers. `scen_*` index into the full scenario table (and rs scenario dim);
-# `iv_col*` index into intervention-only arrays (counterfactual columns dropped).
-scen_rows(d) = ((d - 1) * n_scens_per_dhw + 1):(d * n_scens_per_dhw)
-scen_row(d, s) = (d - 1) * n_scens_per_dhw + s
-cf_idx(d) = scen_row(d, n_scens_per_dhw)
-iv_col(d, o) = (d - 1) * n_options + o
+# ── Domain setup (loaded once) ────────────────────────────────────────────────
 
-dom = ADRIA.load_domain(pd_config["domain_path"], RCP;
+dom = ADRIA.load_domain(pd_config["domain_path"], rcps[1];
     calib_params_fn=pd_config["coral_param_path"],
-    # timeframe: seed_years + 2 (start seeding), 5 (extra years)
     timeframe=(2022, 2022 + seed_years + 2 + 5)
 )
 fix_common_parameters!(dom)
 
-N_seed_weights = (
-    N_seed_TA=0.15, N_seed_CA=0.5, N_seed_CNA=0.0, N_seed_SM=0.35, N_seed_LM=0.0
-)
-N_seed_total = 1e7
-
 ADRIA.fix_factor!(dom;
-    # Environmental
-    # Baseline only; every scenario row gets its block's dhw_scenario assigned below.
-    dhw_scenario=dhw_scenarios[1],
-    # Intervention parameters
-    min_iv_locations=300,
-    # Seeding parameters
+    # Baseline only; every scenario row overrides min_iv_locations explicitly below.
+    min_iv_locations=min_iv_locations_list[1],
     seed_years=seed_years,
     seeding_devices_per_m2=5,
     a_adapt=5.0,
-    N_seed_TA=N_seed_total * N_seed_weights.N_seed_TA,
-    N_seed_CA=N_seed_total * N_seed_weights.N_seed_CA,
-    N_seed_CNA=N_seed_total * N_seed_weights.N_seed_CNA,
-    N_seed_SM=N_seed_total * N_seed_weights.N_seed_SM,
-    N_seed_LM=N_seed_total * N_seed_weights.N_seed_LM
+    # Baseline only; every scenario row overrides N_seed_* explicitly below.
+    N_seed_TA=N_seed_totals[1] * N_seed_weights.N_seed_TA,
+    N_seed_CA=N_seed_totals[1] * N_seed_weights.N_seed_CA,
+    N_seed_CNA=N_seed_totals[1] * N_seed_weights.N_seed_CNA,
+    N_seed_SM=N_seed_totals[1] * N_seed_weights.N_seed_SM,
+    N_seed_LM=N_seed_totals[1] * N_seed_weights.N_seed_LM
 )
 
 options = ADRIA.analysis.option_seed_preference(; include_weights=true)
@@ -67,598 +75,158 @@ options = ADRIA.analysis.option_seed_preference(; include_weights=true)
 # removed (positional indexing into `options` silently breaks when they are).
 criteria = ADRIA.component_params(ADRIA.model_spec(dom), "SeedCriteriaWeights").fieldname
 
-scens_block = []
-for option in eachrow(options)
-    ADRIA.fix_factor!(dom; (criteria .=> collect(option[criteria]))...)
-    scen = ADRIA.sample(dom, 2)[1:1, :]
-    push!(scens_block, scen)
+# ── Build scenario table (direct column assignment, pawn pattern) ─────────────
+
+n_nseed = length(N_seed_totals)
+n_minloc = length(min_iv_locations_list)
+# Row layout (outer → inner): N_seed_total → min_iv_locations → dhw →
+# [5 options, unguided, counterfactual]. Every n_scenarios_per_dhw-th row is a counterfactual.
+n_scens_total = n_nseed * n_minloc * n_dhw * n_scenarios_per_dhw  # 2 × 3 × 3 × 7 = 126
+scens = repeat(ADRIA.sample(dom, 2)[1:1, :], n_scens_total)
+# Identifier carried through to rs.inputs: -1 = counterfactual, 0 = unguided, 1:5 = guided
+# option in the same order as `options` / scenario_names[1:5].
+scens[!, :option] = zeros(Int, n_scens_total)
+
+row = 1
+for N_seed_total in N_seed_totals, min_iv in min_iv_locations_list, dhw in dhw_scenarios
+    for (opt_i, option) in enumerate(eachrow(options))
+        scens[row, :dhw_scenario] = dhw
+        scens[row, :guided] = 1
+        scens[row, :option] = opt_i
+        scens[row, :min_iv_locations] = min_iv
+        scens[row, :N_seed_TA] = N_seed_total * N_seed_weights.N_seed_TA
+        scens[row, :N_seed_CA] = N_seed_total * N_seed_weights.N_seed_CA
+        scens[row, :N_seed_CNA] = N_seed_total * N_seed_weights.N_seed_CNA
+        scens[row, :N_seed_SM] = N_seed_total * N_seed_weights.N_seed_SM
+        scens[row, :N_seed_LM] = N_seed_total * N_seed_weights.N_seed_LM
+        scens[row, criteria] = collect(option[criteria])
+        row += 1
+    end
+
+    # Unguided seeding
+    scens[row, :dhw_scenario] = dhw
+    scens[row, :guided] = 0
+    scens[row, :option] = 0
+    scens[row, :min_iv_locations] = min_iv
+    scens[row, :N_seed_TA] = N_seed_total * N_seed_weights.N_seed_TA
+    scens[row, :N_seed_CA] = N_seed_total * N_seed_weights.N_seed_CA
+    scens[row, :N_seed_CNA] = N_seed_total * N_seed_weights.N_seed_CNA
+    scens[row, :N_seed_SM] = N_seed_total * N_seed_weights.N_seed_SM
+    scens[row, :N_seed_LM] = N_seed_total * N_seed_weights.N_seed_LM
+    row += 1
+
+    # Counterfactual (no seeding) — identical across N_seed/min_iv, duplicated to keep 7-row blocks
+    scens[row, :dhw_scenario] = dhw
+    scens[row, :guided] = 0
+    scens[row, :option] = -1
+    scens[row, :min_iv_locations] = min_iv
+    scens[row, :N_seed_TA] = 0
+    scens[row, :N_seed_CA] = 0
+    scens[row, :N_seed_CNA] = 0
+    scens[row, :N_seed_SM] = 0
+    scens[row, :N_seed_LM] = 0
+    row += 1
 end
 
-# Unguided seeding
-ADRIA.fix_factor!(dom; guided=0)
-scen = ADRIA.sample(dom, 2)[1:1, :]
-push!(scens_block, scen)
-
-# No seeding
-ADRIA.fix_factor!(dom;
-    N_seed_TA=0,
-    N_seed_CA=0,
-    N_seed_CNA=0,
-    N_seed_SM=0,
-    N_seed_LM=0
-)
-scen = ADRIA.sample(dom, 2)[1:1, :]
-push!(scens_block, scen)
-
-scens_block = vcat(scens_block...)
-@assert nrow(scens_block) == n_scens_per_dhw
-
-# One copy of the 7-scenario block per DHW member
-scens = repeat(scens_block, n_dhw)
-for d in 1:n_dhw
-    scens[scen_rows(d), :dhw_scenario] .= dhw_scenarios[d]
-end
-
-rs = ADRIA.run_scenarios(dom, scens, RCP)
+rs = ADRIA.run_scenarios(dom, scens, rcps)
 
 # Load scenario
 # path = "Outputs/"
 # rs = ADRIA.load_results(path)
 
-# Reefs that received seeding in every intervention scenario
-seed_start = Int(rs.inputs.seed_year_start[1])
-n_seed_years = Int(rs.inputs.seed_years[1])
-seed_ts = seed_start:(seed_start + n_seed_years - 1)
-# Intervention scenarios of every DHW block, ordered so that column iv_col(d, o) holds
-# option o under DHW member d.
-intervention_scens = vcat([[scen_row(d, o) for o in 1:n_options] for d in 1:n_dhw]...)
-seed_per_reef_per_ts_scen = dropdims(
-    sum(rs.seed_log[timesteps=seed_ts, scenarios=intervention_scens]; dims=:coral_id);
-    dims=:coral_id
-)
+# ── Shared quantities ─────────────────────────────────────────────────────────
 
-# always/never seeded: must hold across every timestep AND every scenario (both DHW members)
-always_seeded = vec(all(seed_per_reef_per_ts_scen.data .> 0; dims=(1, 3)))
-never_seeded = vec(all(seed_per_reef_per_ts_scen.data .== 0; dims=(1, 3)))
-
-# Remove reefs that always or never have seeding
-selected_locations = .!(always_seeded .| never_seeded)
-selected_locations = findall(selected_locations)
-
-# Validation: seeding coverage across all intervention scenarios
-@info("Total reefs  : $(size(dom.loc_data, 1))")
-@info("Never seeded : $(sum(never_seeded)) ($(round(100*mean(never_seeded); digits=1))%)")
-@info("Always seeded: $(sum(always_seeded)) ($(round(100*mean(always_seeded); digits=1))%)")
-
-s_tac = ADRIA.metrics.scenario_total_cover(rs; locations=selected_locations)
-s_rsv = ADRIA.metrics.scenario_rsv(rs; locations=selected_locations)
-s_even = ADRIA.metrics.scenario_evenness(rs; locations=selected_locations)
-
-# scenario_relative_juveniles ignores the locations kwarg, so pre-slice manually
-_aj = ADRIA.metrics.absolute_juveniles(rs)
-_k_area = ADRIA.loc_k_area(rs)[selected_locations]
-s_juves = ADRIA.metrics.scenario_relative_juveniles(
-    _aj[locations=selected_locations].data, _k_area
-)
-metrics = Dict(
-    "Total absolute cover" => s_tac,
-    "Relative Shelter Volume" => s_rsv,
-    "Relative Juveniles" => s_juves,
-    "Coral Evenness" => s_even
-)
-
-# Pre-load NaturalEarth datasets (cached to disk after first download)
-_ne_land = naturalearth("land", 10)
-_ne_places = naturalearth("populated_places", 10)
-
-# Shared GBR map extent
-_gbr_lon_min, _gbr_lon_max = 141.8, 153.7
-_gbr_lat_min, _gbr_lat_max = -25.2, -9.8
-
-ts_labels = ADRIA.timesteps(rs)[seed_ts]
 all_centroids = ADRIA.centroids(dom.loc_data)
-scenario_names = vcat(options.option_name, [:unguided])
 dhw_model_names = dom.dhw_scens.properties["model_names"][dhw_scenarios]
 
-function _gbr_annotations!(ax)
-    # Step 3: city labels
-    for feat in _ne_places
-        p = feat.properties
-        lon = get(p, :LONGITUDE, nothing)
-        lat = get(p, :LATITUDE, nothing)
-        (isnothing(lon) || isnothing(lat)) && continue
-        _gbr_lon_min <= lon <= _gbr_lon_max || continue
-        _gbr_lat_min <= lat <= _gbr_lat_max || continue
-        get(p, :ADM0NAME, "") == "Australia" || continue
-        get(p, :SCALERANK, 99) <= 6 || continue
-        scatter!(ax, [lon], [lat]; color=:black, markersize=5)
-        text!(ax, lon - 0.08, lat;
-            text=get(p, :NAME, ""), fontsize=8, align=(:right, :center), color=:gray20)
-    end
+# ── Robustness analysis (CVaR over parameter sets) ────────────────────────────
 
-    # Step 4: scale bar
-    bar_lat = _gbr_lat_min + 0.5
-    bar_lon0 = _gbr_lon_min + 0.3
-    bar_lon1 = bar_lon0 + 100.0 / (111.32 * cosd(abs(bar_lat)))
-    cap_h = 0.07
-    lines!(ax, [bar_lon0, bar_lon1], [bar_lat, bar_lat]; color=:black, linewidth=2.5)
-    lines!(
-        ax,
-        [bar_lon0, bar_lon0],
-        [bar_lat - cap_h, bar_lat + cap_h];
-        color=:black,
-        linewidth=2.5
-    )
-    lines!(
-        ax,
-        [bar_lon1, bar_lon1],
-        [bar_lat - cap_h, bar_lat + cap_h];
-        color=:black,
-        linewidth=2.5
-    )
-    text!(
-        ax,
-        bar_lon0,
-        bar_lat - cap_h - 0.08;
-        text="0",
-        align=(:center, :top),
-        fontsize=9,
-        color=:black
-    )
-    text!(
-        ax,
-        bar_lon1,
-        bar_lat - cap_h - 0.08;
-        text="100 km",
-        align=(:center, :top),
-        fontsize=9,
-        color=:black
-    )
+tail_fraction = 0.03
 
-    # Step 5: north arrow
-    arr_lon = _gbr_lon_max - 0.6
-    arr_lat0 = _gbr_lat_max - 1.5
-    arr_dlat = 0.8
-    # Makie ≥ 0.24 split `arrows!` into `arrows2d!`/`arrows3d!` and replaced the tip kwargs.
-    # SankeyMakie (Makie = "0.21, 0.22") holds this env on 0.22, so support both.
-    if isdefined(Makie, :arrows2d!)
-        Makie.arrows2d!(ax, [arr_lon], [arr_lat0], [0.0], [arr_dlat];
-            color=:black, tiplength=10.32, tipwidth=8.9)
-    else
-        Makie.arrows!(ax, [arr_lon], [arr_lat0], [0.0], [arr_dlat];
-            color=:black, arrowsize=10)
-    end
-    return text!(ax, arr_lon, arr_lat0 + arr_dlat + 0.12;
-        text="N", align=(:center, :bottom), fontsize=13, font=:bold)
-end
+# Base quantities computed once (horizon-independent), consumed by `cvar_aggregation`.
+n_locs = size(rs.seed_log, :locations)
+m_tac, fd_arr, loc_hab_area_km2, seed_start = load_base_metrics(rs)
 
-"""
-    panel_map_figure(panel_data, n_panels; title_fn, cbar_label, colormap, colorrange,
-                     gray_points=nothing)
+# Visualisation styling (shared across horizons)
+option_colors = Makie.wong_colors()[1:n_options]
+dhw_linestyles = [:solid, :dash, :dot]
+dhw_markers = [:circle, :rect, :utriangle]
+option_labels = string.(scenario_names)
 
-GBR scatter map of `n_panels` panels side by side sharing a single colorbar.
-`panel_data(p)` returns `(points, values)` for panel `p`; the optional `gray_points(p)`
-returns locations drawn as inactive background.
-"""
-function panel_map_figure(
-    panel_data,
-    n_panels;
-    title_fn,
-    cbar_label,
-    colormap,
-    colorrange,
-    gray_points=nothing
-)
-    fig = Figure(; size=(600 * n_panels, 600))
-    for p in 1:n_panels
-        ax = GeoAxis(
-            fig[1, p];
-            dest="+proj=longlat +datum=WGS84",
-            limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
-            title=title_fn(p),
-            xgridcolor=(:gray, 0.15),
-            ygridcolor=(:gray, 0.15),
-            xticklabelsize=7,
-            yticklabelsize=7
-        )
-        poly!(
-            ax,
-            _ne_land.geometry;
-            color=RGBf(0.93, 0.91, 0.87),
-            strokewidth=0.5,
-            strokecolor=:gray40
-        )
-        if !isnothing(gray_points)
-            scatter!(ax, gray_points(p); color=:gray80, markersize=4, alpha=0.5)
-        end
+# P10 / median / P90 of each net metric over all options × dhw_scenario, one point per
+# parameter set (N_seed, RCP, min_iv_locations), whiskers = P10–P90.
+summary_configs = [
+    (N_seed=1e6, rcp="45", n_loc=100, horizon=20),
+    (N_seed=1e6, rcp="45", n_loc=500, horizon=20),
+    (N_seed=1e7, rcp="45", n_loc=500, horizon=20),
+    (N_seed=1e7, rcp="45", n_loc=500, horizon=20),
+    (N_seed=1e8, rcp="45", n_loc=100, horizon=20),
+    (N_seed=1e8, rcp="45", n_loc=500, horizon=20)
+]
 
-        points, vals = panel_data(p)
-        order = sortperm(vals)
-        scatter!(ax, points[order]; color=vals[order], colormap=colormap,
-            colorrange=colorrange, markersize=4, alpha=0.7)
+net_syms = [:nyrs_net, :tac_net, :fd_net]
+net_labels = ["Years >20% (net)", "Cum. cover (net)", "Cum. evenness (net)"]
+net_colors = Makie.wong_colors()[1:length(net_syms)]
 
-        _gbr_annotations!(ax)
-    end
-    Colorbar(fig[1, n_panels + 1];
-        colorrange=colorrange,
-        colormap=colormap,
-        label=cbar_label,
-        height=Relative(0.65)
-    )
-    rowsize!(fig.layout, 1, Aspect(1, 1.0))
-    resize_to_layout!(fig)
-
-    return fig
-end
-
-#=
-# Selected locations GIF per intervention scenario, for a single DHW member
-gif_dhw = 1
-plottable_gif = GeoMakie.to_multipoly(dom.loc_data[:, :geometry])
-for (opt_i, scen_name) in enumerate(scenario_names)
-    seeded_points = Observable(Point2f[])
-    title_obs = Observable("$scen_name — Year: $(ts_labels[1])")
-
-    fig_gif = Figure()
-    ga_gif = GeoAxis(
-        fig_gif[1, 1];
-        dest="+proj=longlat +datum=WGS84",
-        limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
-        title=title_obs,
-        titlesize=20,
-        xgridcolor=(:gray, 0.15),
-        ygridcolor=(:gray, 0.15),
-        xticklabelsize=7,
-        yticklabelsize=7,
-    )
-    poly!(ga_gif, _ne_land.geometry; color=RGBf(0.93, 0.91, 0.87), strokewidth=0.5, strokecolor=:gray40)
-    poly!(ga_gif, plottable_gif; color=:gray80)
-    scatter!(ga_gif, seeded_points; color=:red, markersize=4)
-    _gbr_annotations!(ga_gif)
-    rowsize!(fig_gif.layout, 1, Aspect(1, 1.0))
-    resize_to_layout!(fig_gif)
-
-    record(
-        fig_gif,
-        joinpath(pd_config["plot_output_path"], "seeding_map_$(scen_name)_dhw$(dhw_scenarios[gif_dhw]).gif"),
-        eachindex(ts_labels);
-        framerate=3
-    ) do i
-        seeded_points[] = all_centroids[seed_per_reef_per_ts_scen[timesteps=i, scenarios=iv_col(gif_dhw, opt_i)] .> 0]
-        title_obs[] = "$scen_name — Year: $(ts_labels[i])"
-    end
-end
-=#
-
-# Seeding frequency histograms per intervention scenario (one row per DHW member)
-fig_hist = Figure(; size=(length(scenario_names) * 350, n_dhw * 400))
-for d in 1:n_dhw, (opt_i, scen_name) in enumerate(scenario_names)
-    seeded_binary = seed_per_reef_per_ts_scen[scenarios=iv_col(d, opt_i)] .> 0
-    seeding_freq = vec(mean(seeded_binary; dims=1)) .* 100
-    ax = Axis(
-        fig_hist[d, opt_i];
-        xlabel="Seeding frequency (%)",
-        ylabel=opt_i == 1 ? "Number of reefs\n$(dhw_model_names[d])" : "",
-        title="$scen_name — $(dhw_model_names[d])",
-        xticks=0:20:100
-    )
-    hist!(ax, seeding_freq; bins=0:5:100)
-end
-save(joinpath(pd_config["plot_output_path"], "seeding_frequency_per_option.png"), fig_hist)
-
-# Seeding frequency histograms aggregating cenarios
-seeding_freq_all = vec(mean(seed_per_reef_per_ts_scen.data .> 0; dims=(1, 3))) .* 100
-fig_hist_all = Figure()
-ax_hist_all = Axis(
-    fig_hist_all[1, 1];
-    xlabel="Seeding frequency (% of timestep–scenario combinations)",
-    ylabel="Number of reefs",
-    title="Seeding frequency — all intervention scenarios, all DHW members",
-    xticks=0:10:100
-)
-hist!(ax_hist_all, seeding_freq_all; bins=0:5:100)
-save(joinpath(pd_config["plot_output_path"], "seeding_frequency_all.png"), fig_hist_all)
-
-active_mask = .!never_seeded
-
-# Total seeds per location map per intervention scenario (one panel per DHW member)
-total_seeds = Array(
-    dropdims(
-        sum(rs.seed_log[scenarios=intervention_scens]; dims=(:timesteps, :coral_id));
-        dims=(:timesteps, :coral_id)
-    )
-)  # (n_locs, n_dhw * n_options), column iv_col(d, o)
-seed_colorrange = (0.0, 1e6)
-#seed_colorrange = (0.0, 1.2e7)
-
-"""
-    plot_total_seeds(total_seeds, scenario_names, all_centroids; seeds_dhw, n_seed_cols,
-                     colorrange, colgap, rowgap, panel_height)
-
-Grid of GBR maps of total deployed coral per location, one panel per option (title = option
-name), all sharing a single colorbar, for a single DHW member `seeds_dhw`.
-
-Panel cells are sized to the GBR map's own aspect ratio so there is no whitespace baked into
-each axis; `colgap`/`rowgap` (in px) then set the actual spacing between panels.
-"""
-function plot_total_seeds(
-    total_seeds,
-    scenario_names,
-    all_centroids;
-    seeds_dhw=2,
-    n_seed_cols=3,
-    colorrange=(0.0, Float64(maximum(total_seeds))),
-    colgap=6,
-    rowgap=6,
-    panel_height=380
-)
-    n_rows = cld(length(scenario_names), n_seed_cols)
-    fig = Figure()
-    for (opt_i, scen_name) in enumerate(scenario_names)
-        row = cld(opt_i, n_seed_cols)
-        col = mod1(opt_i, n_seed_cols)
-        ax = GeoAxis(
-            fig[row, col];
-            dest="+proj=longlat +datum=WGS84",
-            limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
-            title=uppercasefirst(replace(string(scen_name), '_' => ' ')),
-            xgridcolor=(:gray, 0.15),
-            ygridcolor=(:gray, 0.15),
-            xticklabelsize=7,
-            yticklabelsize=7
-        )
-        # Keep y ticks only on the left column and x ticks only on the bottom row
-        col == 1 || hideydecorations!(ax; grid=false)
-        row == n_rows || hidexdecorations!(ax; grid=false)
-        poly!(
-            ax,
-            _ne_land.geometry;
-            color=RGBf(0.93, 0.91, 0.87),
-            strokewidth=0.5,
-            strokecolor=:gray40
-        )
-        scatter!(
-            ax,
-            all_centroids[total_seeds[:, iv_col(seeds_dhw, opt_i)] .== 0];
-            color=:gray80, markersize=4, alpha=0.5
-        )
-
-        has_seeds = total_seeds[:, iv_col(seeds_dhw, opt_i)] .> 0
-        vals = total_seeds[has_seeds, iv_col(seeds_dhw, opt_i)]
-        order = sortperm(vals)
-        scatter!(ax, all_centroids[has_seeds][order]; color=vals[order], colormap=:viridis,
-            colorrange=colorrange, markersize=4, alpha=0.7)
-
-        _gbr_annotations!(ax)
-    end
-    Colorbar(fig[:, n_seed_cols + 1];
-        colorrange=colorrange,
-        colormap=:viridis,
-        label="Total deployed coral",
-        height=Relative(0.65)
-    )
-
-    # Match each map panel to the GBR extent's aspect (cos-corrected for latitude) so the
-    # axis has no internal horizontal whitespace; only then do the gaps control spacing.
-    map_aspect = (_gbr_lon_max - _gbr_lon_min) * cosd((_gbr_lat_min + _gbr_lat_max) / 2) /
-                 (_gbr_lat_max - _gbr_lat_min)
-    for r in 1:n_rows
-        rowsize!(fig.layout, r, Fixed(panel_height))
-    end
-    for c in 1:n_seed_cols
-        colsize!(fig.layout, c, Aspect(1, map_aspect))
-    end
-    colgap!(fig.layout, colgap)
-    rowgap!(fig.layout, rowgap)
-    resize_to_layout!(fig)
-
-    return fig
-end
-
-# Total seeds per location: one panel per option (3×2 grid), sharing one colorbar,
-# for a single DHW member.
-fig_seeds = plot_total_seeds(
-    total_seeds, scenario_names, all_centroids; seeds_dhw=2, colorrange=seed_colorrange
-)
-save(
-    joinpath(pd_config["plot_output_path"], "total_seeds.png"),
-    fig_seeds;
-    px_per_unit=2
+n_cfg = length(summary_configs)
+config_labels = ["1e$(round(Int, log10(cfg.N_seed)))\nRCP$(cfg.rcp)\nn$(cfg.n_loc)" for cfg in summary_configs]
+stat_syms = [:p10, :median, :p90]
+# summary_stats: (config, net metric, stat) — P10 / median / P90 over options × DHW.
+summary_stats = ADRIA.DataCube(
+    zeros(n_cfg, length(net_syms), length(stat_syms));
+    config=config_labels, metric=net_syms, stat=stat_syms
 )
 
-# n_yrs_above_target scatter map per scenario and location filter (one panel per DHW member)
-m_tac = Array(ADRIA.metrics.total_absolute_cover(rs)) .* 1e-6  # km²
-loc_hab_area_km2 = rs.loc_area .* rs.loc_max_coral_cover .* 1e-6
-n_locs_total = size(m_tac, 2)
+for (c_i, cfg) in enumerate(summary_configs)
+    aggreg, per_reef = cvar_aggregation(
+        rs, m_tac, fd_arr, loc_hab_area_km2,
+        cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon; tail_fraction=tail_fraction
+    )
 
-n_yrs_above = Matrix{Int32}(undef, n_locs_total, nrow(scens))
-for s in 1:nrow(scens)
-    for l in 1:n_locs_total
-        thr = 0.20 * loc_hab_area_km2[l] # Threshold of 20% coral cover
-        n_yrs_above[l, s] = Int32(count(m_tac[:, l, s] .>= thr))
+    plot_robustness(aggreg, cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon)
+    plot_boxplot(per_reef, cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon)
+
+    for (m_i, m) in enumerate(net_syms)
+        vals = vec(aggreg[metric=ADRIA.At(m)])  # over all option × dhw_scenario
+        summary_stats[config=c_i, metric=ADRIA.At(m), stat=ADRIA.At(:p10)]    = quantile(vals, 0.10)
+        summary_stats[config=c_i, metric=ADRIA.At(m), stat=ADRIA.At(:median)] = median(vals)
+        summary_stats[config=c_i, metric=ADRIA.At(m), stat=ADRIA.At(:p90)]    = quantile(vals, 0.90)
     end
 end
 
-# Δ vs the counterfactual of the same DHW member
-n_yrs_diff = Matrix{Float64}(undef, n_locs_total, nrow(scens))
-for d in 1:n_dhw
-    n_yrs_diff[:, scen_rows(d)] .= n_yrs_above[:, scen_rows(d)] .- n_yrs_above[:, cf_idx(d)]
-end
-
-# Each performance map below is drawn once per location filter: filter 1 keeps only the reefs
-# this scenario/DHW actually seeded, filter 2 keeps every reef seeded by at least one scenario
-# (so all options share a common reef set, and reefs this option skipped are still shown).
-filter_labels = ["seeded reefs", "all reefs"]
-filter_names = ["seeded_reefs", "all_reefs"]
-location_filters(d, opt_i) = [total_seeds[:, iv_col(d, opt_i)] .> 0, active_mask]
-n_filters = length(filter_labels)
-
-for (opt_i, scen_name) in enumerate(scenario_names), f in 1:n_filters
-    # The seeded-reef filter depends on the DHW member, so resolve it per panel
-    mask(d) = location_filters(d, opt_i)[f]
-
-    fig_map = panel_map_figure(
-        d -> (all_centroids[mask(d)], n_yrs_diff[mask(d), scen_row(d, opt_i)]),
-        n_dhw;
-        title_fn=d -> "Δ years above 20% coral cover — $scen_name vs counterfactual\n$(dhw_model_names[d]) — $(filter_labels[f])",
-        cbar_label="Δ years above 20% coral cover (intervention − counterfactual)",
-        colormap=Reverse(:vik25),
-        colorrange=(-3, 3)
-    )
-    save(
-        joinpath(
-            pd_config["plot_output_path"],
-            "n_yrs_above_target_$(scen_name)_$(filter_names[f]).png"
-        ),
-        fig_map;
-        px_per_unit=2
-    )
-end
-
-# Cumulative absolute cover difference map per scenario and location filter
-# (one panel per DHW member)
-cum_tac = dropdims(sum(m_tac; dims=1); dims=1)  # (n_locs, n_scens), km²·years
-cum_tac_diff = Matrix{Float64}(undef, size(cum_tac))
-for d in 1:n_dhw
-    cum_tac_diff[:, scen_rows(d)] .= cum_tac[:, scen_rows(d)] .- cum_tac[:, cf_idx(d)]
-end
-
-# Symmetric colour range from the bulk of the deltas, so a few extreme reefs don't flatten the map
-_cc_lim = quantile(abs.(vec(cum_tac_diff[active_mask, intervention_scens])), 0.98)
-cum_tac_colorrange = iszero(_cc_lim) ? (-1.0, 1.0) :
-    (-round(_cc_lim; sigdigits=2), round(_cc_lim; sigdigits=2))
-
-for (opt_i, scen_name) in enumerate(scenario_names), f in 1:n_filters
-    mask(d) = location_filters(d, opt_i)[f]
-
-    fig_cc = panel_map_figure(
-        d -> (all_centroids[mask(d)], cum_tac_diff[mask(d), scen_row(d, opt_i)]),
-        n_dhw;
-        title_fn=d -> "Δ cumulative coral cover — $scen_name vs counterfactual\n$(dhw_model_names[d]) — $(filter_labels[f])",
-        cbar_label="Δ cumulative coral cover (km²·years, intervention − counterfactual)",
-        colormap=Reverse(:vik),
-        colorrange=cum_tac_colorrange
-    )
-    save(
-        joinpath(
-            pd_config["plot_output_path"],
-            "cum_tac_diff_$(scen_name)_$(filter_names[f]).png"
-        ),
-        fig_cc;
-        px_per_unit=2
-    )
-end
-
-# Boxplots: performance metrics distribution per intervention scenario, dodged by DHW member
-scen_labels = string.(scenario_names)
-n_active = sum(active_mask)
-
-x_scens = Int[]
-dodge_dhw = Int[]
-y_nyrs = Float64[]
-y_cc = Float64[]
-for opt_i in 1:length(scenario_names), d in 1:n_dhw
-    s = scen_row(d, opt_i)
-    append!(x_scens, fill(opt_i, n_active))
-    append!(dodge_dhw, fill(d, n_active))
-    append!(y_nyrs, n_yrs_diff[active_mask, s])
-    append!(y_cc, cum_tac_diff[active_mask, s])
-end
-dhw_colors = Makie.wong_colors()[1:n_dhw]
-box_colors = dhw_colors[dodge_dhw]
-
-fig_box = Figure(; size=(1100, 450))
-ax_nyrs = Axis(fig_box[1, 1];
-    title="Δ years above 20% coral cover vs counterfactual",
-    ylabel="Δ years above 20% coral cover",
-    xticks=(1:length(scenario_names), scen_labels),
-    xticklabelrotation=π / 4
-)
-boxplot!(ax_nyrs, x_scens, y_nyrs; dodge=dodge_dhw, color=box_colors)
-hlines!(ax_nyrs, [0]; color=:black, linestyle=:dash, linewidth=1)
-
-ax_cc = Axis(fig_box[1, 2];
-    title="Δ cumulative coral cover vs counterfactual",
-    ylabel="Δ cumulative coral cover (km²·years)",
-    xticks=(1:length(scenario_names), scen_labels),
-    xticklabelrotation=π / 4
-)
-boxplot!(ax_cc, x_scens, y_cc; dodge=dodge_dhw, color=box_colors)
-hlines!(ax_cc, [0]; color=:black, linestyle=:dash, linewidth=1)
-
-Legend(fig_box[1, 3],
-    [PolyElement(; color=dhw_colors[d]) for d in 1:n_dhw],
-    dhw_model_names;
-    title="Global Climate Model", framevisible=false
+plot_net_summary(
+    summary_stats, config_labels, net_syms, net_labels, net_colors, summary_configs[1].horizon
 )
 
-save(
-    joinpath(pd_config["plot_output_path"], "performance_metrics_boxplot.png"),
-    fig_box;
-    px_per_unit=2
-)
+# ── Static-option detail plots (per selected parameter set) ───────────────────
+# Each config is one parameter set plotted across all DHW members. `gif_dhw` selects which DHW
+# member (index into `dhw_scenarios`) the per-scenario seeding GIF animates.
 
-# Options time-series plot
-option_names = Symbol.(options.option_name)
-all_names = vcat(option_names, [:unguided_intervention, :no_intervention])
-intervention_names = all_names[1:(end - 1)]
-# Groups index into a single DHW block (one figure per DHW member)
-scen_groups = Dict{Symbol,BitVector}(
-    name => BitVector((1:n_scens_per_dhw) .== i) for (i, name) in enumerate(all_names)
-)
-scen_groups_diff = Dict{Symbol,BitVector}(
-    name => BitVector((1:n_options) .== i) for (i, name) in enumerate(intervention_names)
-)
+static_plot_configs = [
+    (RCP="45", N_seed=1e6, min_iv=300, gif_dhw=1),
+    (RCP="45", N_seed=1e8, min_iv=300, gif_dhw=1)
+]
 
-ts = string.(ADRIA.timesteps(rs))
-tick_pos = collect(1:5:length(ts))
-tick_lbl = ts[1:5:end]
-(length(ts) - 1) % 5 != 0 &&
-    (tick_pos = vcat(tick_pos, length(ts)); tick_lbl = vcat(tick_lbl, ts[end]))
-xtick_vals = (tick_pos, tick_lbl)
-xtick_rot = 2 / π
-
-for (name, metric) in metrics, d in 1:n_dhw
-    # This DHW block only; its counterfactual is the block's last column
-    metric_dhw = ADRIA.DataCube(
-        metric.data[:, scen_rows(d)];
-        timesteps=ADRIA.timesteps(rs),
-        scenarios=1:n_scens_per_dhw
+for cfg in static_plot_configs
+    sel = select_static_scenarios(
+        rs, cfg.N_seed, cfg.min_iv, cfg.RCP;
+        N_seed_weights=N_seed_weights, dhw_scenarios=dhw_scenarios, scenario_names=scenario_names
     )
-    metric_diff = ADRIA.DataCube(
-        metric_dhw.data[:, 1:(end - 1)] .- metric_dhw.data[:, end];
-        timesteps=ADRIA.timesteps(rs),
-        scenarios=1:n_options
-    )
+    seed = seeding_derived(rs, sel)
+    perf = static_performance_metrics(rs, sel)
+    tsm = scenario_timeseries_metrics(rs, seed.selected_locations)
 
-    f = Figure(; size=(3200, 800))
-    g1 = f[1, 1] = GridLayout()
-    g2 = f[1, 2] = GridLayout()
+    # Validation: seeding coverage across all intervention scenarios of this parameter set
+    @info("Parameter set RCP $(cfg.RCP), N_seed $(cfg.N_seed), min_iv $(cfg.min_iv)")
+    @info("  Total reefs  : $(size(dom.loc_data, 1))")
+    @info("  Never seeded : $(sum(seed.never_seeded)) ($(round(100*mean(seed.never_seeded); digits=1))%)")
+    @info("  Always seeded: $(sum(seed.always_seeded)) ($(round(100*mean(seed.always_seeded); digits=1))%)")
 
-    ax1 = Axis(g1[1, 1]; xticks=xtick_vals, xticklabelrotation=xtick_rot,
-        title="$name — $(dhw_model_names[d])")
-    ADRIA.viz.scenarios!(g1, ax1, metric_dhw, scen_groups;
-        opts=Dict{Symbol,Any}(
-            :legend_labels => all_names, :legend => false, :histogram => false
-        ))
-    ADRIA.viz.scenarios_legend!(g1[1, 0], scen_groups, metric_dhw;
-        opts=Dict{Symbol,Any}(:legend_labels => all_names),
-        legend_opts=Dict{Symbol,Any}(:padding => (4, 4, 4, 4))
-    )
-
-    ax2 = Axis(g2[1, 1]; xticks=xtick_vals, xticklabelrotation=xtick_rot,
-        title="$name - counterfactual — $(dhw_model_names[d])",
-        ylabel="$name - counterfactual")
-    ADRIA.viz.scenarios!(g2, ax2, metric_diff, scen_groups_diff;
-        opts=Dict{Symbol,Any}(
-            :legend_labels => intervention_names, :legend => false, :histogram => false
-        ))
-
-    save(
-        joinpath(
-            pd_config["plot_output_path"],
-            "options_$(replace(lowercase(name), ' ' => '_'))_dhw$(dhw_scenarios[d]).png"
-        ),
-        f
-    )
+    plot_seeding_frequency_per_option(seed.seed_per_reef_per_ts_scen, sel, cfg)
+    plot_seeding_frequency_all(seed.seed_per_reef_per_ts_scen, cfg)
+    plot_total_seeds_map(seed.total_seeds, sel, cfg; seeds_dhw=1, colorrange=(0.0, 1e6))
+    plot_nyrs_above_maps(perf.n_yrs_diff, seed.total_seeds, seed.active_mask, sel, cfg)
+    plot_cum_tac_diff_maps(perf.cum_tac_diff, seed.total_seeds, seed.active_mask, sel, cfg)
+    plot_options_timeseries(rs, tsm, sel, options, cfg)
+    #animate_seeding_maps(rs, dom, seed.seed_per_reef_per_ts_scen, sel, cfg; gif_dhw=cfg.gif_dhw)
 end
