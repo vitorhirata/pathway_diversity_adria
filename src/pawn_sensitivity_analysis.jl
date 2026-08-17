@@ -289,25 +289,22 @@ axis_opts = Dict(
     :yticklabelsize => 20
 )
 
-# Each figure groups one metric type into a 2×2 panel of PAWN indices sharing a single
-# colorbar. Panels are laid out row-major: [(1,1), (1,2), (2,1), (2,2)].
+# Each figure groups metrics into an `ncols`-wide grid of PAWN indices sharing a single
+# colorbar. Panels are laid out row-major. When a spec carries `row_labels`, a rotated label
+# column is inserted on the left so each row can name its metric (e.g. the combined
+# cover/evenness figure); otherwise the grid is a plain `ncols`-wide block.
 figure_specs = [
     (
-        suptitle="Cumulative cover",
-        filename="pawn_cumulative_cover",
+        suptitle="",
+        filename="pawn_cover_evenness",
+        ncols=3,
+        size=(2000, 1000),
+        row_labels=["Cumulative cover", "Cumulative evenness"],
         panels=[
             (y_s_tac_raw, "GBR (raw)"),
-            (y_s_tac, "GBR (vs counterfactual)"),
             (y_tac_top, "Best reefs (vs counterfactual)"),
-            (y_tac_bot, "Worst reefs (vs counterfactual)")
-        ]
-    ),
-    (
-        suptitle="Cumulative evenness",
-        filename="pawn_cumulative_evenness",
-        panels=[
+            (y_tac_bot, "Worst reefs (vs counterfactual)"),
             (y_s_even_raw, "GBR (raw)"),
-            (y_s_even, "GBR (vs counterfactual)"),
             (y_fd_top, "Best reefs (vs counterfactual)"),
             (y_fd_bot, "Worst reefs (vs counterfactual)")
         ]
@@ -315,6 +312,7 @@ figure_specs = [
     (
         suptitle="Years above 20% cover",
         filename="pawn_years_above",
+        ncols=2,
         panels=[
             (y_s_nyrs_raw, "GBR (raw)"),
             (y_s_nyrs, "GBR (vs counterfactual)"),
@@ -325,6 +323,7 @@ figure_specs = [
     (
         suptitle="Shelter volume and relative juveniles",
         filename="pawn_shelter_juveniles",
+        ncols=2,
         panels=[
             (y_s_rsv_raw, "Relative shelter volume (GBR, raw)"),
             (y_s_rsv, "Relative shelter volume (GBR, vs counterfactual)"),
@@ -358,16 +357,23 @@ X[!, :dhw_mean] = [
 ]
 
 for spec in figure_specs
-    f = Figure(; fig_opts...)
+    sz = haskey(spec, :size) ? spec.size : fig_opts[:size]
+    f = Figure(; size=sz)
+    ncols = spec.ncols
+    nrows = cld(length(spec.panels), ncols)
+    # Optional left column for rotated per-row metric labels; shifts panels/colorbar right.
+    has_row_labels = haskey(spec, :row_labels)
+    pcol0 = has_row_labels ? 1 : 0
+
     for (i, (y, ptitle)) in enumerate(spec.panels)
-        row = (i - 1) ÷ 2 + 1
-        col = (i - 1) % 2 + 1
+        row = (i - 1) ÷ ncols + 1
+        col = (i - 1) % ncols + 1
         si = ADRIA.sensitivity.pawn(X, y[intervention_idxs])
-        g = f[row, col] = GridLayout()
+        g = f[row, col + pcol0] = GridLayout()
         ax_opts = copy(axis_opts)
         ax_opts[:title] = ptitle
         # Factor labels are identical across panels; keep them only on the left column.
-        if col == 2
+        if col != 1
             ax_opts[:yticklabelsvisible] = false
         end
         ADRIA.viz.pawn!(g, si; opts=opts, axis_opts=ax_opts)
@@ -379,8 +385,15 @@ for spec in figure_specs
             padding=(0, 8, 8, 0)
         )
     end
+
+    if has_row_labels
+        for (r, rlabel) in enumerate(spec.row_labels)
+            Label(f[r, 1], rlabel; rotation=π / 2, fontsize=24, font=:bold, tellheight=false)
+        end
+    end
+
     Colorbar(
-        f[1:2, 3];
+        f[1:nrows, ncols + pcol0 + 1];
         colormap=:viridis,
         colorrange=(0, 1),
         label="Relative Sensitivity",
@@ -388,6 +401,6 @@ for spec in figure_specs
         ticklabelsize=20,
         height=Relative(0.65)
     )
-    Label(f[0, 1:2], spec.suptitle; fontsize=28, font=:bold)
+    Label(f[0, (1 + pcol0):(ncols + pcol0)], spec.suptitle; fontsize=28, font=:bold)
     save(joinpath(pd_config["plot_output_path"], "$(spec.filename).png"), f)
 end
