@@ -14,10 +14,9 @@ functions read analysis globals defined by the including script (`scenario_names
 # ── CVaR tail ratios ──────────────────────────────────────────────────────────
 
 """
-Select bottom and top `tail_fraction` of reefs by delta (opt − cf), then normalize each tail
+Select the bottom and top `tail_number` reefs by delta (opt − cf), then normalize each tail
 by its own counterfactual mean. Returns `(bottom_ratio, top_ratio, raw)` where
-`raw = top_ratio − |bottom_ratio|` (the net variation, mirroring
-`two_sided_cvar`'s `cvar_upper − |cvar_lower|`).
+`raw = top_ratio + bottom_ratio`
 
 Note: this is a *ratio-of-means* (`mean(delta[tail]) / mean(cf[tail])`), whereas
 `two_sided_cvar` is a *mean-of-ratios* (`mean(opt_l/cf_l − 1)`). They agree when cf is roughly
@@ -26,19 +25,17 @@ fallback used when a tail's counterfactual mean is ~0 (relevant for `n_yrs_above
 counterfactual reefs never exceed the 20% threshold).
 """
 function delta_tail_ratio(
-    opt::AbstractVector, cf::AbstractVector; tail_fraction::Float64=0.03, norm::Real=0.0
+    opt::AbstractVector, cf::AbstractVector; tail_number::Int=150, norm::Real=0.0
 )
     delta = opt .- cf
-    k = max(1, floor(Int, tail_fraction * length(delta)))
     order = sortperm(delta)
-    bot = order[1:k]
-    top = order[(end - k + 1):end]
+    bot = order[1:tail_number]
+    top = order[(end - tail_number + 1):end]
 
     bot_ratio = mean(delta[bot]) / (iszero(norm) ? mean(cf) : norm)
     top_ratio = mean(delta[top]) / (iszero(norm) ? mean(cf) : norm)
 
-    raw = top_ratio - abs(bot_ratio)
-    return bot_ratio, top_ratio, raw
+    return bot_ratio, top_ratio, top_ratio + bot_ratio
 end
 
 """
@@ -123,7 +120,7 @@ base_metric_syms = [:nyrs, :tac, :fd]
 
 """
     cvar_aggregation(rs, m_tac, fd_arr, loc_hab_area_km2,
-                     N_seed_total, min_iv, rcp, horizon; tail_fraction=0.03)
+                     N_seed_total, min_iv, rcp, horizon; tail_number=150)
 
 Filter the static-option scenarios for a given `N_seed_total`, `min_iv` (min_iv_locations),
 `rcp` and measurement `horizon` (years from seed-start), window the metrics, and
@@ -138,7 +135,7 @@ Reads analysis globals `scenario_names`, `dhw_scenarios`, `n_options`, `n_dhw`, 
 """
 function cvar_aggregation(
     rs, m_tac, fd_arr, loc_hab_area_km2,
-    N_seed_total, min_iv, rcp, horizon; tail_fraction=0.03
+    N_seed_total, min_iv, rcp, horizon; tail_number=150
 )
     @assert seed_start + horizon - 1 <= size(m_tac, :timesteps) "Run too short for horizon $(horizon)."
     window = seed_start:(seed_start + horizon - 1)
@@ -184,13 +181,13 @@ function cvar_aggregation(
             # (worst, best, net) tail ratios vs counterfactual over all reefs. n_yrs uses
             # horizon length as the zero-guard fallback (many cf reefs never exceed threshold).
             aggreg[option=o, dhw_scenario=d, metric=ADRIA.At([:nyrs_worst, :nyrs_best, :nyrs_net])] .= delta_tail_ratio(
-                opt_nyrs, cf_nyrs; tail_fraction=tail_fraction, norm=float(horizon)
+                opt_nyrs, cf_nyrs; tail_number=tail_number, norm=float(horizon)
             )
             aggreg[option=o, dhw_scenario=d, metric=ADRIA.At([:tac_worst, :tac_best, :tac_net])] .= delta_tail_ratio(
-                opt_tac, cf_tac; tail_fraction=tail_fraction
+                opt_tac, cf_tac; tail_number=tail_number
             )
             aggreg[option=o, dhw_scenario=d, metric=ADRIA.At([:fd_worst, :fd_best, :fd_net])] .= delta_tail_ratio(
-                opt_fd, cf_fd; tail_fraction=tail_fraction
+                opt_fd, cf_fd; tail_number=tail_number
             )
         end
     end
@@ -271,17 +268,17 @@ end
 # ── Aggregated per-pathway robustness (pathways analysis) ──────────────────────
 
 """
-    pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_fraction, seed_years)
+    pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_number, seed_years)
 
 Single scalar summarising pathway (scenario) `s`: the mean of the six tail ratios (bottom and
 top of each of the three metrics, as returned by [`delta_tail_ratio`]). Metric 1
 (`n_yrs_above`) uses `norm=seed_years` as its zero-guard, matching Figures A/B; metrics 2 and 3
 use the default counterfactual-mean norm.
 """
-function pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_fraction, seed_years)
-    b1, t1, _ = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_fraction, norm=seed_years)
-    b2, t2, _ = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_fraction)
-    b3, t3, _ = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_fraction)
+function pathway_robustness(opt_metric_mats, cf_metric_full, s; tail_number, seed_years)
+    b1, t1, _ = delta_tail_ratio(opt_metric_mats[1][:, s], cf_metric_full[1]; tail_number, norm=seed_years)
+    b2, t2, _ = delta_tail_ratio(opt_metric_mats[2][:, s], cf_metric_full[2]; tail_number)
+    b3, t3, _ = delta_tail_ratio(opt_metric_mats[3][:, s], cf_metric_full[3]; tail_number)
     return mean((b1, b2, b3, t1, t2, t3))
 end
 
@@ -296,7 +293,7 @@ const cvar_metric_labels = [
 
 """
     pathways_cvar_ranges(option_names, option_pathways, opt_metric_mats, cf_metric_full;
-        tail_fraction, seed_years) -> DataFrame
+        tail_number, seed_years) -> DataFrame
 
 Tidy per (starting option × metric variant) table of per-pathway ratios across the 9 metric
 variants (GBR / worst / best per metric, grouped by metric; `metric_idx` 1–9 as in
@@ -309,7 +306,7 @@ worst/best are the tail ratios ([`delta_tail_ratio`]). This is the data Figure B
 """
 function pathways_cvar_ranges(
     option_names, option_pathways, opt_metric_mats, cf_metric_full;
-    tail_fraction, seed_years
+    tail_number, seed_years
 )
     # Per-metric zero-guard norm: seed_years for n_yrs_above, default (mean(cf)) for cover/evenness.
     norms = (seed_years, 0.0, 0.0)
@@ -329,7 +326,7 @@ function pathways_cvar_ranges(
                 opt = opt_metric_mats[m][:, s]
                 cf = cf_metric_full[m]
                 g = delta_region_ratio(opt, cf; norm=norms[m])
-                b, t, _ = delta_tail_ratio(opt, cf; tail_fraction=tail_fraction, norm=norms[m])
+                b, t, _ = delta_tail_ratio(opt, cf; tail_number=tail_number, norm=norms[m])
                 ratios[p, (3 * (m - 1) + 1):(3 * m)] = [g, b, t]
             end
         end
@@ -366,7 +363,7 @@ end
 
 """
     pathway_worst_dhw_robustness(rs, option_names, opt_metric_mats, ps; dhw_scenarios,
-        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction)
+        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number)
         -> Dict(option => Dict(option_ts => Float64))
 
 Worst-case robustness of every *individual* pathway of parameter set `ps`, grouped by starting
@@ -377,7 +374,7 @@ per pathway and is independent of any starting-option aggregation.
 function pathway_worst_dhw_robustness(
     rs, option_names, opt_metric_mats, ps;
     dhw_scenarios,
-    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number
 )
     K = eltype(rs.inputs.option_ts)
     worst = Dict(option => Dict{K,Float64}() for option in option_names)
@@ -399,7 +396,7 @@ function pathway_worst_dhw_robustness(
             d = worst[option]
             for s in pathways[option]
                 key = rs.inputs.option_ts[s]
-                rob = pathway_robustness(opt_metric_mats, cf_full, s; tail_fraction, seed_years)
+                rob = pathway_robustness(opt_metric_mats, cf_full, s; tail_number, seed_years)
                 d[key] = haskey(d, key) ? min(d[key], rob) : rob
             end
         end
@@ -410,7 +407,7 @@ end
 
 """
     worst_dhw_robustness(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets,
-        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction) -> DataFrame
+        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number) -> DataFrame
 
 For each (starting option × parameter set), summarise the per-pathway worst-over-DHW robustness
 ([`pathway_worst_dhw_robustness`]) with its P10, median and P90 over pathways.
@@ -421,7 +418,7 @@ Options with no pathways in a parameter set are skipped.
 function worst_dhw_robustness(
     rs, option_names, opt_metric_mats;
     dhw_scenarios, param_sets,
-    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number
 )
     df = DataFrame(;
         start_option=String[], N_seed=Float64[], n_locations=Int[],
@@ -432,7 +429,7 @@ function worst_dhw_robustness(
         worst = pathway_worst_dhw_robustness(
             rs, option_names, opt_metric_mats, ps;
             dhw_scenarios,
-            seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+            seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number
         )
 
         for option in option_names
@@ -597,7 +594,7 @@ end
 
 """
     top_robustness_pathways(rs, option_names, opt_metric_mats; dhw_scenarios, param_sets,
-        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction,
+        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number,
         n_top=10) -> DataFrame
 
 Per (starting option × parameter set), rank the distinct per-block option sequences
@@ -610,7 +607,7 @@ cell is the `" > "`-joined option sequence (empty string when fewer than `n_top`
 function top_robustness_pathways(
     rs, option_names, opt_metric_mats;
     dhw_scenarios, param_sets,
-    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction, n_top::Int=10
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number, n_top::Int=10
 )
     max_time = size(rs.seed_log, :timesteps)
     top_cols = [Symbol("Top$i") for i in 1:n_top]
@@ -624,7 +621,7 @@ function top_robustness_pathways(
         worst = pathway_worst_dhw_robustness(
             rs, option_names, opt_metric_mats, ps;
             dhw_scenarios,
-            seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+            seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number
         )
 
         for option in option_names
@@ -677,7 +674,7 @@ function pathway_tail_stats(M::AbstractVector, w::AbstractVector)
 end
 
 """
-    aggregate_metric(intervention, counterfactual, reference, probs; tail_frac=0.05)
+    aggregate_metric(intervention, counterfactual, reference, probs; tail_number=150)
 
 `intervention` is `nreefs × npathways`, `counterfactual` is length `nreefs`, `probs` is length
 `npathways`. Returns `(region, top, bottom, n_eff)` where `region`/`top`/`bottom` are
@@ -686,7 +683,7 @@ end
 """
 function aggregate_metric(
     intervention::AbstractMatrix, counterfactual::AbstractVector, reference::Real,
-    probs::AbstractVector; tail_frac::Float64=0.05
+    probs::AbstractVector; tail_number::Int=150
 )
     nreefs, npaths = size(intervention)
     @assert nreefs == length(counterfactual)
@@ -700,7 +697,7 @@ function aggregate_metric(
     for p in 1:npaths
         Mregion[p] = delta_region_ratio(intervention[:, p], counterfactual; norm=reference)
         Mminus[p], Mplus[p], _ = delta_tail_ratio(
-            intervention[:, p], counterfactual; tail_fraction=tail_frac, norm=reference
+            intervention[:, p], counterfactual; tail_number=tail_number, norm=reference
         )
     end
 
@@ -731,14 +728,14 @@ end
 
 """
     compute_weighted_tail_stats(option_names, option_pathways, weighted_metrics, prob_map, rs;
-        tail_fraction)
+        tail_number)
 
 Tidy per (starting option × metric × variant) table of probability-weighted statistics.
 `weighted_metrics` is a vector of `(name, intervention_matrix, counterfactual_column, reference)`
 tuples. `metric_idx` 1–9 matches `metric_labels` ordering (GBR/worst/best grouped per metric).
 """
 function compute_weighted_tail_stats(
-    option_names, option_pathways, weighted_metrics, prob_map, rs; tail_fraction
+    option_names, option_pathways, weighted_metrics, prob_map, rs; tail_number
 )
     weighted_tail_stats = DataFrame(;
         start_option=String[], metric=String[], metric_idx=Int[], tail=String[],
@@ -751,7 +748,7 @@ function compute_weighted_tail_stats(
         probs = [prob_map[rs.inputs.option_ts[s]] for s in idxs]
 
         for (m, (name, mat, cf, ref)) in enumerate(weighted_metrics)
-            res = aggregate_metric(mat[:, idxs], cf, ref, probs; tail_frac=tail_fraction)
+            res = aggregate_metric(mat[:, idxs], cf, ref, probs; tail_number=tail_number)
             for (tail_name, stats, metric_idx) in (
                 ("gbr", res.region, 3 * (m - 1) + 1),
                 ("worst", res.bottom, 3 * (m - 1) + 2),

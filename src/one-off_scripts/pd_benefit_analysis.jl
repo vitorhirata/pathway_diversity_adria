@@ -165,13 +165,11 @@ Returns 0.5 at break-even, >0.5 net beneficial, <0.5 net detrimental.
 """
 function two_sided_cvar(
     delta::AbstractVector, ref_perf::AbstractVector;
-    tail_fraction::Float64=0.20, σ::Float64=0.1, normalize_by_ref::Bool=true
+    tail_number::Int=150, σ::Float64=0.1, normalize_by_ref::Bool=true
 )::Float64
-    N = length(delta)
-    k = max(1, min(floor(Int, tail_fraction * N), N ÷ 2))
     s = sort(delta)
-    cvar_lower = mean(s[1:k])
-    cvar_upper = mean(s[(end - k + 1):end])
+    cvar_lower = mean(s[1:tail_number])
+    cvar_upper = mean(s[(end - tail_number + 1):end])
     raw = cvar_upper - abs(cvar_lower)
     if normalize_by_ref
         ref_mean = mean(ref_perf)
@@ -200,7 +198,7 @@ function omega_ratio(delta::AbstractVector; σ::Float64=0.1)::Float64
 end
 
 # Parameters to compute benefit
-tail_fraction = 0.05  # CVaR: fraction of reefs in each tail
+tail_number = 150  # CVaR: number of reefs in each tail
 # tanh sensitivity per metric (output ≈ 0.88 when benefit equals σ)
 σ_tac = 0.001  # cum_tac_diff       (km², normalized by ref_mean)
 σ_rel_tac = 0.01  # cum_rel_tac_diff   (dimensionless relative cover)
@@ -213,19 +211,19 @@ ref_fd = cum_fd[:, cf_col]
 
 for (s, opt) in enumerate(possible_options)
     cvar_tac = two_sided_cvar(
-        cum_tac_diff[:, s], ref_tac; tail_fraction, σ=σ_tac, normalize_by_ref=true
+        cum_tac_diff[:, s], ref_tac; tail_number, σ=σ_tac, normalize_by_ref=true
     )
     cvar_rel_tac = two_sided_cvar(
-        cum_rel_tac_diff[:, s], ref_tac; tail_fraction, σ=σ_rel_tac, normalize_by_ref=false
+        cum_rel_tac_diff[:, s], ref_tac; tail_number, σ=σ_rel_tac, normalize_by_ref=false
     )
     cvar_tac_alt = two_sided_cvar(
-        cum_tac_diff_alt[:, s], ref_tac; tail_fraction, σ=σ_tac_alt, normalize_by_ref=false
+        cum_tac_diff_alt[:, s], ref_tac; tail_number, σ=σ_tac_alt, normalize_by_ref=false
     )
     cvar_fd = two_sided_cvar(
-        cum_fd_diff[:, s], ref_fd; tail_fraction, σ=σ_fd, normalize_by_ref=false
+        cum_fd_diff[:, s], ref_fd; tail_number, σ=σ_fd, normalize_by_ref=false
     )
     cvar_fd_alt = two_sided_cvar(
-        cum_fd_diff_alt[:, s], ref_fd; tail_fraction, σ=σ_fd_alt, normalize_by_ref=false
+        cum_fd_diff_alt[:, s], ref_fd; tail_number, σ=σ_fd_alt, normalize_by_ref=false
     )
 
     om_tac = omega_ratio(cum_tac_diff[:, s]; σ=σ_tac)

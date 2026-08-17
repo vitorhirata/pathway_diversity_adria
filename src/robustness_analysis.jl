@@ -44,7 +44,7 @@ option_names = ADRIA.analysis.option_seed_preference().option_name
 n_options = length(option_names)
 
 # Parameters to analyse
-tail_fraction = 0.03
+tail_number = 150
 
 # Parameter sets to plot: one set of figures A/B/C per entry. Each is a NamedTuple
 # `(dhw, N_seed, n_locations)`. Mirrors pd_main.jl's `boxplot_configs`/`lockin_configs` style.
@@ -110,7 +110,7 @@ for ps in param_sets
     # across the 9 metric variants (GBR/worst/best × 3 metrics).
     cvar_df = pathways_cvar_ranges(
         option_names, option_pathways, opt_metric_mats, cf_metric_full;
-        tail_fraction, seed_years
+        tail_number, seed_years
     )
     plot_pathways_cvar(cvar_df, option_names, option_colors, option_labels, ps)
     push!(cvar_tables, _add_params(cvar_df, ps))
@@ -127,7 +127,7 @@ for ps in param_sets
         ("Cumulative evenness", cfd, cf_metric_full[3], mean(cf_metric_full[3]))
     ]
     weighted_tail_stats = compute_weighted_tail_stats(
-        option_names, option_pathways, weighted_metrics, prob_map, rs; tail_fraction=tail_fraction
+        option_names, option_pathways, weighted_metrics, prob_map, rs; tail_number=tail_number
     )
     plot_pathways_weighted(
         weighted_tail_stats, option_names, option_colors, option_labels, ps;
@@ -167,7 +167,7 @@ param_sets_nl = detect_param_sets(rs; N_seed_weights)  # (N_seed, n_locations), 
 rob_df = worst_dhw_robustness(
     rs, option_names, opt_metric_mats;
     dhw_scenarios, param_sets=param_sets_nl,
-    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+    seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number
 )
 CSV.write(joinpath(pd_config["plot_output_path"], "robustness.csv"), rob_df)
 # Combine two simulations by stacking rows
@@ -186,7 +186,7 @@ for ps in param_sets_nl
     top_pathways = top_robustness_pathways(
         rs, option_names, opt_metric_mats;
         dhw_scenarios, param_sets=[ps],
-        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_fraction
+        seed_year_start, seed_years, pd_frequency, N_seed_weights, tail_number
     )
     fname = "top_robustness_pathways_n$(_sci(ps.N_seed))_l$(ps.n_locations).csv"
     CSV.write(joinpath(pd_config["plot_output_path"], fname), top_pathways)

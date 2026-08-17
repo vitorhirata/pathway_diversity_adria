@@ -12,7 +12,7 @@ PAWN sensitivity analysis on local tail metrics and GBR-scale metrics.
   * local tail metrics, counterfactual-relative, as in
     `static_options.jl`: for each of cumulative cover, years above 20%
     cover, and cumulative evenness, the per-reef delta (option − counterfactual) is reduced
-    to the mean of the bottom/top `tail_fraction` of reefs, normalized (worst/best reefs)
+    to the mean of the bottom/top `tail_number` reefs, normalized (worst/best reefs)
   * GBR-scale metrics: total absolute cover, relative shelter volume, relative juveniles and
     coral evenness, over all locations, reduced to their time mean. Reported twice: raw, and
     as the fractional change against the counterfactual. Both drop the no-seeding scenarios
@@ -36,7 +36,7 @@ using ADRIA.Distributions: LogUniform, TriangularDist  # quantile comes from Sta
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 seed_years = 20
-tail_fraction = 0.05
+tail_number = 150
 rcps = ["26", "45", "70"]
 n_sobol = 512  # must be a power of 2 (Sobol' sampler requirement)
 
@@ -179,18 +179,17 @@ cum_fd = dropdims(sum(fd_data; dims=:timesteps); dims=:timesteps)  # (locations,
 # ── Counterfactual-relative tail metric ───────────────────────────────────────
 
 """
-Select bottom and top `tail_fraction` of reefs by delta (opt − cf), then compute
+Select the bottom and top `tail_number` reefs by delta (opt − cf), then compute
 mean(delta[group]) / norm for each group. If `norm == 0`, defaults to mean(cf).
 Returns (bottom_ratio, top_ratio).
 """
 function delta_tail_ratio(
-    opt::AbstractVector, cf::AbstractVector; tail_fraction::Float64=0.05, norm::Float64=0.0
+    opt::AbstractVector, cf::AbstractVector; tail_number::Int=150, norm::Float64=0.0
 )
     delta = opt .- cf
-    k = max(1, floor(Int, tail_fraction * length(delta)))
     order = sortperm(delta)
-    bot = order[1:k]
-    top = order[(end - k + 1):end]
+    bot = order[1:tail_number]
+    top = order[(end - tail_number + 1):end]
 
     if iszero(norm)
         norm = mean(cf)
@@ -222,11 +221,11 @@ for s in intervention_idxs
     cf_fd = cum_fd.data[:, cf_s]
 
     y_nyrs_bot[s], y_nyrs_top[s] =
-        delta_tail_ratio(opt_nyrs, cf_nyrs; tail_fraction=tail_fraction, norm=1.0)
+        delta_tail_ratio(opt_nyrs, cf_nyrs; tail_number=tail_number, norm=1.0)
     y_tac_bot[s], y_tac_top[s] =
-        delta_tail_ratio(opt_tac, cf_tac; tail_fraction=tail_fraction, norm=1.0)
+        delta_tail_ratio(opt_tac, cf_tac; tail_number=tail_number, norm=1.0)
     y_fd_bot[s], y_fd_top[s] =
-        delta_tail_ratio(opt_fd, cf_fd; tail_fraction=tail_fraction, norm=1.0)
+        delta_tail_ratio(opt_fd, cf_fd; tail_number=tail_number, norm=1.0)
 end
 
 # ── GBR-scale metrics, raw and counterfactual-relative ────────────────────────

@@ -141,7 +141,7 @@ dhw_model_names = dom.dhw_scens.properties["model_names"][dhw_scenarios]
 
 # ── Robustness analysis (CVaR over parameter sets) ────────────────────────────
 
-tail_fraction = 0.03
+tail_number = 150
 
 # Base quantities computed once (horizon-independent), consumed by `cvar_aggregation`.
 n_locs = size(rs.seed_log, :locations)
@@ -180,7 +180,7 @@ summary_stats = ADRIA.DataCube(
 for (c_i, cfg) in enumerate(summary_configs)
     aggreg, per_reef = cvar_aggregation(
         rs, m_tac, fd_arr, loc_hab_area_km2,
-        cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon; tail_fraction=tail_fraction
+        cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon; tail_number=tail_number
     )
 
     plot_robustness(aggreg, cfg.N_seed, cfg.n_loc, cfg.rcp, cfg.horizon)
