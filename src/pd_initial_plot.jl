@@ -160,11 +160,11 @@ for i in idx_scens
     elseif haskey(option_perf, :nothing) && haskey(option_perf, dst)
         counter = option_perf[:nothing]
         cand_perf = option_perf[dst]
-        cum_rel_tac_diff[r, c] = ADRIA.analysis.two_sided_cvar(
+        cum_rel_tac_diff[r, c] = ADRIA.analysis.delta_tail_ratio(
             cand_perf[metric=ADRIA.At(:rel_tac)] ./ counter[metric=ADRIA.At(:rel_tac)] .- 1;
             σ=ADRIA.analysis._σ_rel_tac
         )
-        cum_fd_diff[r, c] = ADRIA.analysis.two_sided_cvar(
+        cum_fd_diff[r, c] = ADRIA.analysis.delta_tail_ratio(
             cand_perf[metric=ADRIA.At(:fd)] ./ counter[metric=ADRIA.At(:fd)] .- 1;
             σ=ADRIA.analysis._σ_fd
         )
