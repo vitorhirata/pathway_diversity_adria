@@ -488,6 +488,14 @@ function join_robustness_diversity(rob_df, pd_df)
             )
         end
     end
+
+    joined.robustness_ranking = zeros(Int, nrow(joined))
+    joined.pd_ranking = zeros(Int, nrow(joined))
+    for panel in groupby(joined, [:N_seed, :n_locations])
+        panel.robustness_ranking .= ordinalrank(panel.robustness; rev=true)
+        panel.pd_ranking .= ordinalrank(panel.pathway_diversity; rev=true)
+    end
+
     return joined
 end
 
