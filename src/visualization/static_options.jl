@@ -29,14 +29,14 @@ _ne_places = naturalearth("populated_places", 10)
 _gbr_lon_min, _gbr_lon_max = 141.8, 153.7
 _gbr_lat_min, _gbr_lat_max = -25.2, -9.8
 
-function _gbr_annotations!(ax)
-    # Step 3: city labels
+function _gbr_annotations!(ax; label_min_lon=_gbr_lon_min, north_arrow=true)
+    # Step 3: city labels (only for places at/east of `label_min_lon`)
     for feat in _ne_places
         p = feat.properties
         lon = get(p, :LONGITUDE, nothing)
         lat = get(p, :LATITUDE, nothing)
         (isnothing(lon) || isnothing(lat)) && continue
-        _gbr_lon_min <= lon <= _gbr_lon_max || continue
+        label_min_lon <= lon <= _gbr_lon_max || continue
         _gbr_lat_min <= lat <= _gbr_lat_max || continue
         get(p, :ADM0NAME, "") == "Australia" || continue
         get(p, :SCALERANK, 99) <= 6 || continue
@@ -46,7 +46,7 @@ function _gbr_annotations!(ax)
     end
 
     # Step 4: scale bar
-    bar_lat = _gbr_lat_min + 0.5
+    bar_lat = _gbr_lat_min + 0.8
     bar_lon0 = _gbr_lon_min + 0.3
     bar_lon1 = bar_lon0 + 100.0 / (111.32 * cosd(abs(bar_lat)))
     cap_h = 0.07
@@ -84,8 +84,9 @@ function _gbr_annotations!(ax)
         color=:black
     )
 
-    # Step 5: north arrow
-    arr_lon = _gbr_lon_max - 0.6
+    # Step 5: north arrow (optional — e.g. only on one panel of a multi-panel figure)
+    north_arrow || return ax
+    arr_lon = _gbr_lon_max - 0.2
     arr_lat0 = _gbr_lat_max - 1.5
     arr_dlat = 0.8
     # Makie ≥ 0.24 split `arrows!` into `arrows2d!`/`arrows3d!` and replaced the tip kwargs.
@@ -219,24 +220,41 @@ function plot_total_seeds(
     n_seed_cols=3,
     colorrange=(0.0, Float64(maximum(total_seeds))),
     colgap=6,
-    rowgap=6,
+    rowgap=10,
     panel_height=380
 )
     n_rows = cld(length(scenario_names), n_seed_cols)
     fig = Figure()
+
+    # A plain Axis is used here instead of GeoAxis: the map is an equirectangular (+proj=longlat)
+    # plot, so land polygons and reef points render identically in lon/lat, but a plain Axis gives
+    # exact control over tick positions and labels. (GeoAxis auto-filters ticks near the frame,
+    # dropping the bottom latitude labels, and its spacing is geometry-dependent.) We draw a 1°
+    # graticule manually and label only every other degree.
+    grid_lons = ceil(Int, _gbr_lon_min):floor(Int, _gbr_lon_max)
+    grid_lats = ceil(Int, _gbr_lat_min):floor(Int, _gbr_lat_max)
+    label_lons = collect(filter(iseven, grid_lons))
+    label_lats = collect(filter(iseven, grid_lats))
+    xtick_lbls = (label_lons, ["$(l)°E" for l in label_lons])
+    ytick_lbls = (label_lats, ["$(abs(l))°S" for l in label_lats])
+
     for (opt_i, scen_name) in enumerate(scenario_names)
         row = cld(opt_i, n_seed_cols)
         col = mod1(opt_i, n_seed_cols)
-        ax = GeoAxis(
+        ax = Axis(
             fig[row, col];
-            dest="+proj=longlat +datum=WGS84",
             limits=(_gbr_lon_min, _gbr_lon_max, _gbr_lat_min, _gbr_lat_max),
             title=uppercasefirst(replace(string(scen_name), '_' => ' ')),
-            xgridcolor=(:gray, 0.15),
-            ygridcolor=(:gray, 0.15),
-            xticklabelsize=7,
-            yticklabelsize=7
+            xgridvisible=false,
+            ygridvisible=false,
+            xticks=xtick_lbls,
+            yticks=ytick_lbls,
+            xticklabelsize=11,
+            yticklabelsize=11,
+            xticklabelpad=5,    # longitude (x) labels: slightly more vertical gap
+            yticklabelpad=5    # latitude (y) labels: more horizontal gap
         )
+        hidespines!(ax)  # drop the axis frame box around each panel
         # Keep y ticks only on the left column and x ticks only on the bottom row
         col == 1 || hideydecorations!(ax; grid=false)
         row == n_rows || hidexdecorations!(ax; grid=false)
@@ -247,6 +265,15 @@ function plot_total_seeds(
             strokewidth=0.5,
             strokecolor=:gray40
         )
+        # 2° graticule over the whole extent
+        for lon in label_lons
+            lines!(ax, [lon, lon], [_gbr_lat_min, _gbr_lat_max];
+                color=(:gray, 0.15), linewidth=0.5)
+        end
+        for lat in label_lats
+            lines!(ax, [_gbr_lon_min, _gbr_lon_max], [lat, lat];
+                color=(:gray, 0.15), linewidth=0.5)
+        end
         scatter!(
             ax,
             all_centroids[total_seeds[:, sel.iv_col(seeds_dhw, opt_i)] .== 0];
@@ -259,12 +286,19 @@ function plot_total_seeds(
         scatter!(ax, all_centroids[has_seeds][order]; color=vals[order], colormap=:viridis,
             colorrange=colorrange, markersize=4, alpha=0.7)
 
-        _gbr_annotations!(ax)
+        # North arrow only on the top-right panel (row 1, last column)
+        _gbr_annotations!(ax; label_min_lon=145.0, north_arrow=(opt_i == n_seed_cols))
     end
+    # Colorbar in millions of coral: ticks are the raw seed counts, labelled ÷1e6 (0 → 1).
+    tick_vals = collect(range(colorrange[1], colorrange[2]; length=5))
+    tick_lbls = map(v -> replace(string(round(v / 1e6; digits=2)), r"\.?0+$" => ""), tick_vals)
     Colorbar(fig[:, n_seed_cols + 1];
         colorrange=colorrange,
         colormap=:viridis,
-        label="Total deployed coral",
+        label="Number of deployed corals (million)",
+        labelsize=16,
+        ticks=(tick_vals, tick_lbls),
+        width=30,
         height=Relative(0.65)
     )
 
@@ -279,6 +313,7 @@ function plot_total_seeds(
         colsize!(fig.layout, c, Aspect(1, map_aspect))
     end
     colgap!(fig.layout, colgap)
+    colgap!(fig.layout, n_seed_cols, 24)  # extra gap between the last panel and the colorbar
     rowgap!(fig.layout, rowgap)
     resize_to_layout!(fig)
 
