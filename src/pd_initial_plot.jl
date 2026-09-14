@@ -61,10 +61,59 @@ rs = ADRIA.run_scenarios(dom, scens, RCP)
 
 # ----------------------------------------------------------
 # Options definition plot
+"""
+    mcda_options(data::DataFrame)::Figure
+
+Heatmap of the MCDA criteria weights given to each seeding option. Expects a DataFrame
+with an `option_name` column and one column per criterion prefixed with `seed_`.
+"""
+function mcda_options(data::DataFrame)::Figure
+    option_names = [uppercasefirst(replace(string(o), "_" => " ")) for o in data.option_name]
+    criteria_cols = filter(startswith("seed_"), names(data))
+    weights = Matrix(data[:, criteria_cols])
+
+    # Optimisation direction per criterion (maximum → ↑, minimum → ↓), aligned with the
+    # seed_* columns in field order.
+    criteria_directions = data.preference[1].directions
+    criteria_names = [
+        uppercasefirst(replace(col, "seed_" => "", "_" => " ")) *
+        (dir === maximum ? " (↑)" : " (↓)")
+        for (col, dir) in zip(criteria_cols, criteria_directions)
+    ]
+
+    n_criteria, n_options = length(criteria_names), length(option_names)
+
+    fig = Figure()
+    ax = Axis(
+        fig[1, 1];
+        xlabel="MCDA criteria",
+        ylabel="Options",
+        xticks=(1:n_criteria, criteria_names),
+        yticks=(1:n_options, option_names),
+        xticklabelrotation=2.0 / π,
+        yreversed=true
+    )
+    Label(
+        fig[1, 1, TopLeft()], "(a)";
+        font=:bold, fontsize=18, halign=:left, padding=(0, 0, 5, 0)
+    )
+    limits = (0.0, 1.0)
+    heatmap!(ax, transpose(weights); colorrange=limits)
+    Colorbar(fig[1, 2]; limits=limits, label="Weight")
+    text!(ax,
+        string.(round.(vec(weights); digits=1));
+        position=[Point2f(x, y) for x in 1:n_criteria for y in 1:n_options],
+        align=(:center, :center),
+        color=:white,
+        fontsize=14
+    )
+    return fig
+end
+
 figures_path = joinpath(pd_config["plot_output_path"], "pd_figures")
 mkpath(figures_path)
 options_iw = ADRIA.analysis.option_seed_preference(; include_weights=true)
-fig = ADRIA.viz.mcda_options(options_iw)
+fig = mcda_options(options_iw)
 save(joinpath(pd_config["plot_output_path"], "pd_figures", "option_weight_matrix.png"), fig)
 
 # ----------------------------------------------------------
