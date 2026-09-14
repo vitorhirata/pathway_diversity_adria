@@ -546,7 +546,7 @@ pd_param_sets = sort(
     unique([(r.N_seed, r.n_locations) for r in eachrow(worst_pd)])
 )
 pd_param_idx = Dict(c => i for (i, c) in enumerate(pd_param_sets))
-pd_param_labels = ["$(_sci(c[1])) seeds · $(c[2]) locs" for c in pd_param_sets]
+pd_param_labels = ["$(round(Int, c[1] / 1e6))M corals · $(c[2]) reefs" for c in pd_param_sets]
 
 fig = Figure(; size=(800, 400))
 ax = Axis(fig[1, 1];

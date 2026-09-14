@@ -199,7 +199,7 @@ function plot_robustness_param_scatter(rob_df, option_names, option_colors, opti
     # Parameter-set x-axis: unique (N_seed, n_locations), sorted by N_seed then n_locations.
     combos = sort(unique([(r.N_seed, r.n_locations) for r in eachrow(rob_df)]))
     combo_idx = Dict(c => i for (i, c) in enumerate(combos))
-    combo_labels = ["$(_sci(c[1])) seeds · $(c[2]) locs" for c in combos]
+    combo_labels = ["$(round(Int, c[1] / 1e6))M corals · $(c[2]) reefs" for c in combos]
 
     fig = Figure(size=(900, 480))
     ax = Axis(fig[1, 1];
@@ -259,10 +259,10 @@ function plot_robustness_vs_diversity(
 
     fig = Figure(size=(320 * n_c + 220, 260 * n_r + 90))
     for (ri, ns) in enumerate(n_seeds)
-        Label(fig[ri, 0], "$(_sci(ns)) seeds"; rotation=π / 2, font=:bold, tellheight=false)
+        Label(fig[ri, 0], "$(round(Int, ns / 1e6))M corals"; rotation=π / 2, font=:bold, tellheight=false, fontsize=18)
     end
     for (ci, nl) in enumerate(n_locs)
-        Label(fig[0, ci], "$(nl) locations"; font=:bold, tellwidth=false)
+        Label(fig[0, ci], "$(nl) reefs"; font=:bold, tellwidth=false, fontsize=18)
     end
 
     for (ri, ns) in enumerate(n_seeds), (ci, nl) in enumerate(n_locs)
@@ -274,7 +274,9 @@ function plot_robustness_vs_diversity(
         ax = Axis(fig[ri, ci];
             limits=(xlims, ylims),
             xlabel=ri == n_r ? "Worst-case pathway diversity" : "",
-            ylabel=ci == 1 ? "Worst-case performance" : ""
+            ylabel=ci == 1 ? "Worst-case performance" : "",
+            xlabelsize=18,
+            ylabelsize=18
         )
         sub = rob_div_df[(rob_div_df.N_seed .== ns) .& (rob_div_df.n_locations .== nl), :]
         for (o_i, option) in enumerate(option_names)
@@ -284,9 +286,9 @@ function plot_robustness_vs_diversity(
             dom = r[!, "dominated?"]
             nd = .!dom
             any(nd) && scatter!(ax, r.pathway_diversity[nd], r.robustness[nd];
-                color=option_colors[o_i], markersize=12)
+                color=option_colors[o_i], markersize=16)
             any(dom) && scatter!(ax, r.pathway_diversity[dom], r.robustness[dom];
-                color=:transparent, strokecolor=option_colors[o_i], strokewidth=1.5, markersize=12)
+                color=:transparent, strokecolor=option_colors[o_i], strokewidth=1.5, markersize=16)
             errorbars!(
                 ax, r.pathway_diversity, r.robustness,
                 r.robustness .- r.robustness_p10, r.robustness_p90 .- r.robustness;
@@ -297,7 +299,7 @@ function plot_robustness_vs_diversity(
         tau = panel_tau_diversity_robustness(sub)
         text!(ax, 0.03, 0.97;
             text=isnan(tau) ? "Kendall-τ = n/a" : "Kendall-τ = $(round(tau; digits=2))",
-            space=:relative, align=(:left, :top), fontsize=12
+            space=:relative, align=(:left, :top), fontsize=14
         )
     end
 
@@ -311,7 +313,11 @@ function plot_robustness_vs_diversity(
         ],
         [option_labels, ["Dominating", "Dominated"]],
         ["Starting option", "Marker"];
-        framevisible=false
+        framevisible=false,
+        labelsize=16,
+        titlesize=18,
+        titlehalign=:left,
+        gridshalign=:left
     )
 
     save(
