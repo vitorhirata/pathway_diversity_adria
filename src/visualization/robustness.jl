@@ -361,18 +361,19 @@ function plot_pathways_weighting_comparison(
     fig = Figure(size=(1300, 520))
     ax = Axis(fig[1, 1];
         xticks=(1:length(comparison_metric_idxs), comparison_metric_labels),
-        xticklabelsize=11,
+        xticklabelsize=16,
         xticklabelrotation=π / 4,
-        ylabel="Relative performance against counterfactual"
+        ylabel="Relative performance against counterfactual",
+        ylabelsize=16
     )
     hlines!(ax, [0]; color=:black, linewidth=2)
     vlines!(ax, [2.5, 4.5]; color=:gray70, linewidth=1, linestyle=:dash)
 
-    pair_offset = 0.055  # half-gap between the unweighted and weighted markers of one option
+    pair_offset = 0.05  # half-gap between the unweighted and weighted markers of one option
 
     for (o_i, option) in enumerate(option_names)
         color = option_colors[o_i]
-        offset = _dodge_offset(o_i, n_options, 0.72)
+        offset = _dodge_offset(o_i, n_options, 1.0)
 
         uw = cvar_df[cvar_df.start_option .== string(option), :]
         wt = weighted_tail_stats[weighted_tail_stats.start_option .== string(option), :]
@@ -394,20 +395,24 @@ function plot_pathways_weighting_comparison(
 
         # Unweighted (Figure B) — filled circle. Probability-weighted (Figure C) — filled diamond.
         _draw_option_series!(ax, x_uw, uw.median, uw.p10, uw.p90;
-            color, marker=:circle, markersize=10, whiskerwidth=5)
+            color, marker=:circle, markersize=15, whiskerwidth=5)
         _draw_option_series!(ax, x_wt, wt[!, point_stat], wt.p10, wt.p90;
-            color, marker=:diamond, markersize=11, whiskerwidth=5)
+            color, marker=:rect, markersize=15, whiskerwidth=5)
     end
 
     Legend(fig[1, 2],
         [
-            [MarkerElement(; marker=:circle, color=option_colors[i]) for i in 1:n_options],
-            [MarkerElement(; marker=:circle, color=:gray40),
-             MarkerElement(; marker=:diamond, color=:gray40)]
+            [MarkerElement(; marker=:circle,  markersize=13, color=option_colors[i]) for i in 1:n_options],
+            [MarkerElement(; marker=:circle,  markersize=13, color=:gray40),
+             MarkerElement(; marker=:rect,  markersize=13, color=:gray40)]
         ],
-        [option_labels, ["Unweighted", "Prob. weighted ($(point_stat))"]],
-        ["Starting option", "Weighting"];
-        framevisible=false
+        [option_labels, ["Unweighted", "Weighted by probability"]],
+        ["Starting option", "Pathway aggregation"];
+        framevisible=false,
+        labelsize=16,
+        titlesize=18,
+        titlehalign=:left,
+        gridshalign=:left
     )
 
     fname = "robustness_pathways_comparison_$(point_stat)_$(_param_suffix(ps)).png"
