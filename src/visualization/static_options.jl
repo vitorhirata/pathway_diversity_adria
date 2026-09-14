@@ -29,26 +29,32 @@ _ne_places = naturalearth("populated_places", 10)
 _gbr_lon_min, _gbr_lon_max = 141.8, 153.7
 _gbr_lat_min, _gbr_lat_max = -25.2, -9.8
 
-function _gbr_annotations!(ax; label_min_lon=_gbr_lon_min, north_arrow=true)
-    # Step 3: city labels (only for places at/east of `label_min_lon`)
+function _gbr_annotations!(ax;
+    label_min_lon=_gbr_lon_min, label_min_lat=_gbr_lat_min, scalerank=6,
+    city_fontsize=9,
+    scale_lon0=0.3, scale_km=100.0, scale_fontsize=9,
+    north_arrow=true, arrow_lon=_gbr_lon_max - 0.2, arrow_lat=_gbr_lat_max - 1.5
+)
+    # Step 3: city labels (only for places at/east of `label_min_lon`, north of `label_min_lat`,
+    # and prominent enough — `SCALERANK <= scalerank`)
     for feat in _ne_places
         p = feat.properties
         lon = get(p, :LONGITUDE, nothing)
         lat = get(p, :LATITUDE, nothing)
         (isnothing(lon) || isnothing(lat)) && continue
         label_min_lon <= lon <= _gbr_lon_max || continue
-        _gbr_lat_min <= lat <= _gbr_lat_max || continue
+        label_min_lat <= lat <= _gbr_lat_max || continue
         get(p, :ADM0NAME, "") == "Australia" || continue
-        get(p, :SCALERANK, 99) <= 6 || continue
+        get(p, :SCALERANK, 99) <= scalerank || continue
         scatter!(ax, [lon], [lat]; color=:black, markersize=5)
         text!(ax, lon - 0.08, lat;
-            text=get(p, :NAME, ""), fontsize=8, align=(:right, :center), color=:gray20)
+            text=get(p, :NAME, ""), fontsize=city_fontsize, align=(:right, :center), color=:gray20)
     end
 
-    # Step 4: scale bar
+    # Step 4: scale bar (`scale_km` long, in degrees of longitude at this latitude)
     bar_lat = _gbr_lat_min + 0.8
-    bar_lon0 = _gbr_lon_min + 0.3
-    bar_lon1 = bar_lon0 + 100.0 / (111.32 * cosd(abs(bar_lat)))
+    bar_lon0 = _gbr_lon_min + scale_lon0
+    bar_lon1 = bar_lon0 + scale_km / (111.32 * cosd(abs(bar_lat)))
     cap_h = 0.07
     lines!(ax, [bar_lon0, bar_lon1], [bar_lat, bar_lat]; color=:black, linewidth=2.5)
     lines!(
@@ -67,27 +73,18 @@ function _gbr_annotations!(ax; label_min_lon=_gbr_lon_min, north_arrow=true)
     )
     text!(
         ax,
-        bar_lon0,
-        bar_lat - cap_h - 0.08;
-        text="0",
-        align=(:center, :top),
-        fontsize=9,
-        color=:black
-    )
-    text!(
-        ax,
-        bar_lon1,
-        bar_lat - cap_h - 0.08;
-        text="100 km",
-        align=(:center, :top),
-        fontsize=9,
+        (bar_lon0 + bar_lon1) / 2,
+        bar_lat + cap_h + 0.08;
+        text="$(round(Int, scale_km)) km",
+        align=(:center, :bottom),
+        fontsize=scale_fontsize,
         color=:black
     )
 
     # Step 5: north arrow (optional — e.g. only on one panel of a multi-panel figure)
     north_arrow || return ax
-    arr_lon = _gbr_lon_max - 0.2
-    arr_lat0 = _gbr_lat_max - 1.5
+    arr_lon = arrow_lon
+    arr_lat0 = arrow_lat
     arr_dlat = 0.8
     # Makie ≥ 0.24 split `arrows!` into `arrows2d!`/`arrows3d!` and replaced the tip kwargs.
     # SankeyMakie (Makie = "0.21, 0.22") holds this env on 0.22, so support both.
