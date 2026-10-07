@@ -91,7 +91,7 @@ cum_rel_tac = dropdims(
 )  # (n_locs, 5)
 
 # cum_fd: cumulative coral evenness summed over [ts_start, ts_end]
-fd_data = Array(ADRIA.metrics.coral_evenness(rs))  # (timesteps, locs, scenarios)
+fd_data = Array(ADRIA.metrics.coral_diversity(rs))  # Gini-Simpson (1 - D); (timesteps, locs, scenarios)
 cum_fd = dropdims(
     sum(fd_data[ts_start:ts_end, :, scen_ids]; dims=1); dims=1
 )  # (n_locs, 5)
@@ -203,7 +203,9 @@ tail_number = 150  # CVaR: number of reefs in each tail
 σ_tac = 0.001  # cum_tac_diff       (km², normalized by ref_mean)
 σ_rel_tac = 0.01  # cum_rel_tac_diff   (dimensionless relative cover)
 σ_tac_alt = 0.01  # cum_tac_diff_alt   ((cand−ref)/(cand+ref))
-σ_fd = 0.05  # cum_fd_diff        (evenness units)
+# TODO: re-tune for Gini-Simpson (1 - D). This value was tuned for inverse-Simpson evenness
+# (summed over the window, range ~1-G/ts); diversity sums are O(0-1)/ts, so 0.05 is now mis-scaled.
+σ_fd = 0.05  # cum_fd_diff        (diversity units; see TODO above)
 σ_fd_alt = 0.001  # cum_fd_diff_alt    ((cand−ref)/(cand+ref))
 
 ref_tac = cum_tac[:, cf_col]

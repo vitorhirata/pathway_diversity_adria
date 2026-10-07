@@ -60,7 +60,7 @@ Materialise the horizon-independent base quantities shared by both robustness an
 """
 function load_base_metrics(result_set)
     m_tac = ADRIA.readcubedata(ADRIA.metrics.total_absolute_cover(result_set)) .* 1e-6  # km²
-    fd_arr = ADRIA.readcubedata(ADRIA.metrics.coral_evenness(result_set))
+    fd_arr = ADRIA.readcubedata(ADRIA.metrics.coral_diversity(result_set))  # Gini-Simpson (1 - D)
     loc_hab_area_km2 = result_set.loc_area .* result_set.loc_max_coral_cover .* 1e-6
     seed_start = Int(result_set.inputs.seed_year_start[1])
     return m_tac, fd_arr, loc_hab_area_km2, seed_start

@@ -116,7 +116,7 @@ All metrics integrate over the full run (matching the static maps), not the robu
 """
 function static_performance_metrics(rs, sel)
     m_tac = Array(ADRIA.metrics.total_absolute_cover(rs)) .* 1e-6  # km²
-    fd_arr = Array(ADRIA.metrics.coral_evenness(rs))
+    fd_arr = Array(ADRIA.metrics.coral_diversity(rs))  # Gini-Simpson (1 - D)
     loc_hab_area_km2 = rs.loc_area .* rs.loc_max_coral_cover .* 1e-6
     n_locs = size(m_tac, 2)
 
@@ -154,7 +154,12 @@ DHW block). `scenario_relative_juveniles` ignores the `locations` kwarg, so it i
 function scenario_timeseries_metrics(rs, selected_locations)
     s_tac = ADRIA.metrics.scenario_total_cover(rs; locations=selected_locations)
     s_rsv = ADRIA.metrics.scenario_rsv(rs; locations=selected_locations)
-    s_even = ADRIA.metrics.scenario_evenness(rs; locations=selected_locations)
+    # Scenario-mean Gini-Simpson (1 - D) trajectory. Computed inline rather than via
+    # scenario_evenness because 1 - 1/x is nonlinear, so diversity must be formed per
+    # location/timestep before averaging over locations.
+    s_even = ADRIA.metrics.scenario_trajectory(
+        ADRIA.metrics.coral_diversity(rs)[locations=selected_locations]
+    )
 
     _aj = ADRIA.metrics.absolute_juveniles(rs)
     _k_area = ADRIA.loc_k_area(rs)[selected_locations]

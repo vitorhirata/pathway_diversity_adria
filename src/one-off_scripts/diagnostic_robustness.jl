@@ -61,7 +61,7 @@ bundle them with the ResultSet and per-location habitable area.
 """
 function load_bundle(result_set, name)
     m_tac = ADRIA.readcubedata(ADRIA.metrics.total_absolute_cover(result_set)) .* 1e-6  # km²
-    fd_arr = ADRIA.readcubedata(ADRIA.metrics.coral_evenness(result_set))
+    fd_arr = ADRIA.readcubedata(ADRIA.metrics.coral_diversity(result_set))  # Gini-Simpson (1 - D)
     hab = result_set.loc_area .* result_set.loc_max_coral_cover .* 1e-6  # km²
     return (rs=result_set, name=name, m_tac=m_tac, fd_arr=fd_arr, hab=hab)
 end

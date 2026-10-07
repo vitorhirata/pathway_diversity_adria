@@ -137,7 +137,7 @@ mcda_method = ADRIA.mcda_methods()[Int64(rs.inputs.guided[1])]
 # Outcome-perf caches over window [tstep, t_end].
 # Use per-location total absolute cover (km²) rather than relative cover for the outcome metric.
 abs_cover_data = Array(ADRIA.metrics.total_absolute_cover(rs)[scenarios=idx_scens]) .* 1e-6
-fd_data = Array(rs.outcomes[:coral_evenness][scenarios=idx_scens])
+fd_data = Array(ADRIA.metrics.coral_diversity(rs)[scenarios=idx_scens])  # Gini-Simpson (1 - D)
 scen_to_idx = Dict(s => i for (i, s) in enumerate(idx_scens))
 t_end = min(tstep + pd_frequency - 1, max_time)
 decision_times = collect(seed_year_start:pd_frequency:(seed_year_start + seed_years - 1))
