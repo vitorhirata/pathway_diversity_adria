@@ -274,7 +274,7 @@ opts = Dict(
     :ytick_labels => [
         "Climate Model",
         "Mean DHW",
-        "RCP",
+        "SSP",
         "Option",
         "Number of locations",
         "Number of corals deployed",
