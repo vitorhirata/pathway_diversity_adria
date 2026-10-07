@@ -15,7 +15,7 @@ This script only orchestrates: load results → compute metrics → make plots.
 =#
 
 include("src/common.jl")
-using GeoMakie, GraphMakie, CairoMakie
+using GeoMakie, GraphMakie, CairoMakie, StatsBase
 include("src/data_processing/robustness.jl")
 include("src/visualization/robustness.jl")
 
