@@ -249,11 +249,10 @@ end
 y_s_tac_raw = vec(mean(ADRIA.metrics.scenario_total_cover(rs); dims=:timesteps))
 y_s_rsv_raw = vec(mean(ADRIA.metrics.scenario_rsv(rs); dims=:timesteps))
 y_s_juves_raw = vec(mean(ADRIA.metrics.scenario_relative_juveniles(rs); dims=:timesteps))
-# Scenario-mean Gini-Simpson (1 - D) trajectory, computed inline (1 - 1/x is nonlinear, so
-# diversity is formed per location/timestep before averaging over locations).
-y_s_even_raw = vec(mean(
-    ADRIA.metrics.scenario_trajectory(ADRIA.metrics.coral_diversity(rs)); dims=:timesteps
-))
+
+# Scenario-mean Gini-Simpson (1 - D)
+fd_div = ADRIA.readcubedata(ADRIA.metrics.coral_diversity(rs))
+y_s_even_raw = vec(mean(fd_div; dims=(:timesteps, :locations)))
 
 # GBR-scale years above 20% cover: sum the per-reef counts over locations (kept in YAXArray
 # form, then reduced to a per-scenario vector).

@@ -154,12 +154,10 @@ DHW block). `scenario_relative_juveniles` ignores the `locations` kwarg, so it i
 function scenario_timeseries_metrics(rs, selected_locations)
     s_tac = ADRIA.metrics.scenario_total_cover(rs; locations=selected_locations)
     s_rsv = ADRIA.metrics.scenario_rsv(rs; locations=selected_locations)
-    # Scenario-mean Gini-Simpson (1 - D) trajectory. Computed inline rather than via
-    # scenario_evenness because 1 - 1/x is nonlinear, so diversity must be formed per
-    # location/timestep before averaging over locations.
-    s_even = ADRIA.metrics.scenario_trajectory(
-        ADRIA.metrics.coral_diversity(rs)[locations=selected_locations]
-    )
+
+    # Scenario-mean Gini-Simpson (1 - D) trajectory.
+    fd_div = ADRIA.readcubedata(ADRIA.metrics.coral_diversity(rs)[locations=selected_locations])
+    s_even = dropdims(mean(fd_div; dims=:locations); dims=:locations)
 
     _aj = ADRIA.metrics.absolute_juveniles(rs)
     _k_area = ADRIA.loc_k_area(rs)[selected_locations]
