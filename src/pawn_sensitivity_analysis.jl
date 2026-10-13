@@ -275,7 +275,7 @@ opts = Dict(
     ],
     :by => :none,
     :ytick_labels => [
-        "Climate Model",
+        "Global Climate Model",
         "Mean DHW",
         "SSP",
         "Option",

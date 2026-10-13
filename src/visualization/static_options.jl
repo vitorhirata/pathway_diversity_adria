@@ -284,7 +284,10 @@ function plot_total_seeds(
             colorrange=colorrange, markersize=4, alpha=0.7)
 
         # North arrow only on the top-right panel (row 1, last column)
-        _gbr_annotations!(ax; label_min_lon=145.0, north_arrow=(opt_i == n_seed_cols))
+        _gbr_annotations!(ax;
+            label_min_lon=145.0, label_min_lat=-20.0, north_arrow=(opt_i == n_seed_cols), scale_km=200, scalerank=5,
+            scale_lon0=1.0, city_fontsize=12, scale_fontsize=12
+        )
     end
     # Colorbar in millions of coral: ticks are the raw seed counts, labelled ÷1e6 (0 → 1).
     tick_vals = collect(range(colorrange[1], colorrange[2]; length=5))
