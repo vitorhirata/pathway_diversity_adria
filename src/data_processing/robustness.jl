@@ -23,14 +23,23 @@ Note: this is a *ratio-of-means* (`mean(delta[tail]) / mean(cf[tail])`), whereas
 flat across the tail and diverge where a tail reef has near-zero cf. `norm` is a zero-guard
 fallback used when a tail's counterfactual mean is ~0 (relevant for `n_yrs_above`, where many
 counterfactual reefs never exceed the 20% threshold).
+
+    tail_indices(delta; tail_number=150) -> (bot, top)
+
+Indices of the `tail_number` smallest (`bot`) and largest (`top`) entries of `delta`, by ascending
+sort. Shared tail-selection used by [`delta_tail_ratio`] and the outcome-envelope analysis so both
+rank reefs the same way.
 """
+function tail_indices(delta::AbstractVector; tail_number::Int=150)
+    order = sortperm(delta)
+    return order[1:tail_number], order[(end - tail_number + 1):end]
+end
+
 function delta_tail_ratio(
     opt::AbstractVector, cf::AbstractVector; tail_number::Int=150, norm::Real=0.0
 )
     delta = opt .- cf
-    order = sortperm(delta)
-    bot = order[1:tail_number]
-    top = order[(end - tail_number + 1):end]
+    bot, top = tail_indices(delta; tail_number=tail_number)
 
     bot_ratio = mean(delta[bot]) / (iszero(norm) ? mean(cf) : norm)
     top_ratio = mean(delta[top]) / (iszero(norm) ? mean(cf) : norm)
@@ -263,6 +272,190 @@ function find_counterfactual(rs, sel_dhw)
     )
     @assert !isnothing(cf_idx) "No counterfactual (zero total seeds) found in `rs` for dhw $(sel_dhw)."
     return cf_idx
+end
+
+# ── Outcome-envelope time series (pathways analysis) ───────────────────────────
+#
+#   Time-series companion to Figures A/B/C. Instead of collapsing each pathway to whole-horizon
+#   tail ratios, trace how the benefit vs counterfactual evolves through the seeding window, per
+#   starting option, for each of the 6 metric variants (3 metric types × worst/best-150 tail) and
+#   for the DHW scenario that makes each pathway look worst vs best.
+
+# Metric types, in row-group order. Each pairs the whole-horizon scalar index (into
+# `opt_metric_mats`, 1=nyrs, 2=tac, 3=fd) with its `delta_tail_ratio` zero-guard norm policy
+# (`:seed_years` → norm=seed_years, matching Figures A/B/C; `:cf_mean` → default mean(cf) norm).
+const envelope_metric_types = [
+    (sym=:nyrs, idx=1, norm=:seed_years),
+    (sym=:tac, idx=2, norm=:cf_mean),
+    (sym=:fd, idx=3, norm=:cf_mean)
+]
+
+"""
+    pathway_dhw_scenarios(rs, option_names; ps, dhw_scenarios, seed_year_start, seed_years,
+        pd_frequency, N_seed_weights) -> Dict(option => Dict(option_ts => Dict(dhw => scenario_col)))
+
+For parameter set `ps = (N_seed, n_locations)`, map every continuously-seeded pathway (keyed by its
+`option_ts`) to the `rs` scenario column it occupies under each DHW scenario, grouped by starting
+option. Same per-DHW grouping as [`pathway_worst_dhw_robustness`], but keeps the explicit
+DHW → column mapping so the envelope analysis can select a DHW per pathway.
+"""
+function pathway_dhw_scenarios(
+    rs, option_names; ps, dhw_scenarios,
+    seed_year_start, seed_years, pd_frequency, N_seed_weights
+)
+    K = eltype(rs.inputs.option_ts)
+    out = Dict(option => Dict{K,Dict{Int,Int}}() for option in option_names)
+
+    for sel_dhw in dhw_scenarios
+        pathways = group_pathways_by_starting_option(
+            rs, option_names;
+            sel_dhw, sel_N_seed=ps.N_seed, sel_n_locations=ps.n_locations,
+            seed_year_start, seed_years, pd_frequency, N_seed_weights
+        )
+        for option in option_names
+            d = out[option]
+            for s in pathways[option]
+                key = rs.inputs.option_ts[s]
+                haskey(d, key) || (d[key] = Dict{Int,Int}())
+                d[key][sel_dhw] = s
+            end
+        end
+    end
+
+    return out
+end
+
+"""Running count, per timestep of `window`, of scenario `s`'s cover ≥ 20% habitable area, per reef."""
+function _cum_nyrs_series(m_tac, loc_hab_area_km2, window, s)
+    # (H, n_locs) indicator of threshold exceedance, then cumulative sum down time.
+    cover = m_tac[timesteps=window, scenarios=s].data  # (H, n_locs)
+    thr = reshape(0.20 .* loc_hab_area_km2, 1, :)
+    return cumsum(cover .>= thr; dims=1)
+end
+
+"""
+    tail_series_vs_cf(m_tac, fd_arr, loc_hab_area_km2, window, s, cf, tail, metric_type)
+        -> Vector{Float64}
+
+Per-timestep (over `window`) mean across the `tail` reefs of scenario `s`'s difference vs the
+counterfactual column `cf`. `metric_type ∈ (:nyrs, :tac, :fd)`:
+- `:tac` / `:fd` — raw per-timestep difference of cover / coral evenness.
+- `:nyrs` — difference of the running count of timesteps ≥ 20% habitable-area cover
+  ([`_cum_nyrs_series`]), so the curve is cumulative like the scalar metric it traces.
+Length equals `length(window)`.
+"""
+function tail_series_vs_cf(
+    m_tac, fd_arr, loc_hab_area_km2, window, s::Int, cf::Int, tail, metric_type::Symbol
+)
+    if metric_type === :nyrs
+        diff = _cum_nyrs_series(m_tac, loc_hab_area_km2, window, s) .-
+               _cum_nyrs_series(m_tac, loc_hab_area_km2, window, cf)
+    elseif metric_type === :tac
+        diff = m_tac[timesteps=window, scenarios=s].data .- m_tac[timesteps=window, scenarios=cf].data
+    elseif metric_type === :fd
+        diff = fd_arr[timesteps=window, scenarios=s].data .- fd_arr[timesteps=window, scenarios=cf].data
+    else
+        error("unknown metric_type $(metric_type)")
+    end
+    # diff is (H, n_locs); average over the tail reefs → length-H vector.
+    return vec(Statistics.mean(view(diff, :, tail); dims=2))
+end
+
+"""
+    envelope_timeseries(rs, option_names, opt_metric_mats; ps, dhw_scenarios, tail_number,
+        seed_years, horizon, seed_year_start, pd_frequency, N_seed_weights)
+        -> (years, Dict((row, col, option) => (median, p10, p90)))
+
+Outcome-envelope curves for parameter set `ps = (N_seed, n_locations)`. For each starting option,
+each row `(metric_type, side)` (side ∈ `:worst`/`:best`, the worst/best-150-reef tail) and each
+column `col` ∈ `:worst`/`:best` (DHW selection direction):
+
+1. For every continuously-seeded pathway of the option, pick the DHW that minimises (`col=:worst`)
+   or maximises (`col=:best`) the matching whole-horizon [`delta_tail_ratio`] — the bottom ratio for
+   a `:worst` row, the top ratio for a `:best` row — across the DHWs the pathway occurs in.
+2. Under that DHW, take the matching tail's 150 reefs ([`tail_indices`] on the whole-horizon delta)
+   and build the per-timestep mean-over-tail difference vs the same-DHW counterfactual
+   ([`tail_series_vs_cf`]).
+3. Reduce the per-pathway curves pointwise to median / P10 / P90.
+
+`opt_metric_mats = (nyrs, ctac, cfd)` supplies the whole-horizon scalars (per [`reef_metrics`]).
+`years` is the window's calendar labels for the x-axis. Options with no pathways are omitted.
+The 6 rows are indexed 1–6 as `envelope_metric_types` × (`:worst`, `:best`).
+"""
+function envelope_timeseries(
+    rs, option_names, opt_metric_mats;
+    ps, dhw_scenarios, tail_number, seed_years, horizon,
+    seed_year_start, pd_frequency, N_seed_weights
+)
+    m_tac, fd_arr, loc_hab_area_km2, seed_start = load_base_metrics(rs)
+    @assert seed_start + horizon - 1 <= size(m_tac, :timesteps) "Run too short for horizon $(horizon)."
+    window = seed_start:(seed_start + horizon - 1)
+    # Numeric calendar years for the x-axis, robust to Int / Date / string timestep coordinates.
+    years = [parse(Int, match(r"^\d+", s).match) for s in string.(collect(ADRIA.timesteps(rs))[window])]
+
+    # Per-DHW counterfactual columns and their whole-horizon scalars (for tail/DHW selection).
+    cf_col = Dict(dhw => find_counterfactual(rs, dhw) for dhw in dhw_scenarios)
+
+    paths = pathway_dhw_scenarios(
+        rs, option_names;
+        ps, dhw_scenarios, seed_year_start, seed_years, pd_frequency, N_seed_weights
+    )
+
+    results = Dict{Tuple{Int,Symbol,eltype(option_names)},NamedTuple}()
+
+    for option in option_names
+        option_paths = paths[option]
+        isempty(option_paths) && continue
+
+        for (side_i, side) in enumerate((:worst, :best)), (mt_i, mt) in enumerate(envelope_metric_types)
+            row = 2 * (mt_i - 1) + side_i  # rows grouped by metric type, worst then best
+            scalar_mat = opt_metric_mats[mt.idx]
+
+            for col in (:worst, :best)
+                # One per-pathway curve, collected into (H, n_paths).
+                curves = Vector{Float64}[]
+                for (_, dhw_map) in option_paths
+                    best_dhw = nothing
+                    best_val = nothing
+                    best_tail = nothing
+                    best_s = nothing
+                    for (dhw, s) in dhw_map
+                        cf = cf_col[dhw]
+                        opt_scalar = scalar_mat[:, s]
+                        cf_scalar = scalar_mat[:, cf]
+                        norm = mt.norm === :seed_years ? float(seed_years) : 0.0
+                        bot_r, top_r, _ = delta_tail_ratio(
+                            opt_scalar, cf_scalar; tail_number=tail_number, norm=norm
+                        )
+                        val = side === :worst ? bot_r : top_r
+                        take = isnothing(best_val) ||
+                               (col === :worst ? val < best_val : val > best_val)
+                        if take
+                            best_val = val
+                            best_dhw = dhw
+                            best_s = s
+                            bot_idx, top_idx = tail_indices(
+                                opt_scalar .- cf_scalar; tail_number=tail_number
+                            )
+                            best_tail = side === :worst ? bot_idx : top_idx
+                        end
+                    end
+                    push!(curves, tail_series_vs_cf(
+                        m_tac, fd_arr, loc_hab_area_km2, window,
+                        best_s, cf_col[best_dhw], best_tail, mt.sym
+                    ))
+                end
+
+                mat = reduce(hcat, curves)  # (H, n_paths)
+                med = vec(mapslices(median, mat; dims=2))
+                p10 = vec(mapslices(r -> quantile(r, 0.10), mat; dims=2))
+                p90 = vec(mapslices(r -> quantile(r, 0.90), mat; dims=2))
+                results[(row, col, option)] = (median=med, p10=p10, p90=p90)
+            end
+        end
+    end
+
+    return years, results
 end
 
 # ── Aggregated per-pathway robustness (pathways analysis) ──────────────────────

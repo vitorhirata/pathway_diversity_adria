@@ -22,6 +22,21 @@ metric_labels = [
 ]
 metric_titles = ["Years >20% coral cover", "Cumulative cover", "Cumulative evenness"]
 
+# Outcome-envelope figure (6 rows = 3 metric types × worst/best-150 tail, 2 cols = worst/best DHW).
+# Order matches `envelope_metric_types` × (:worst, :best) → rows 1..6.
+envelope_row_labels = [
+    "Years >20%\n(worst reefs)", "Years >20%\n(best reefs)",
+    "Cum. cover\n(worst reefs)", "Cum. cover\n(best reefs)",
+    "Cum. evenness\n(worst reefs)", "Cum. evenness\n(best reefs)"
+]
+# Per-row y-axis unit (Δ vs counterfactual), paired with `envelope_row_labels`.
+envelope_row_ylabels = [
+    "Δ cumulative years >20%", "Δ cumulative years >20%",
+    "Δ cover (km²)", "Δ cover (km²)",
+    "Δ evenness", "Δ evenness"
+]
+envelope_col_titles = ["Worst case (over DHW)", "Best case (over DHW)"]
+
 # Static-option figures
 aggreg_metric_labels = [
     "Years >20%\n(worst)", "Years >20%\n(best)", "Years >20%\n(net)",
@@ -416,6 +431,55 @@ function plot_pathways_weighting_comparison(
     )
 
     fname = "robustness_pathways_comparison_$(point_stat)_$(_param_suffix(ps)).png"
+    save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
+    @info "Saved $(fname)"
+end
+
+# ── Outcome-envelope time series ──────────────────────────────────────────────
+
+"""
+    plot_envelope_timeseries(years, results, option_names, option_colors, option_labels, ps)
+
+6-row × 2-column outcome-envelope figure for parameter set `ps = (N_seed, n_locations)`. Rows are
+the 6 metric variants (`envelope_row_labels`); columns are worst-case / best-case DHW selection
+(`envelope_col_titles`). Each cell draws, per starting option, a median line with a P10–P90 band
+over the option's downstream pathways (difference vs counterfactual). `years`/`results` come from
+[`envelope_timeseries`]; options absent from `results` (no pathways) are skipped.
+"""
+function plot_envelope_timeseries(
+    years, results, option_names, option_colors, option_labels, ps
+)
+    cols = (:worst, :best)
+    fig = Figure(size=(1000, 1500))
+
+    for (ci, title) in enumerate(envelope_col_titles)
+        Label(fig[0, ci], title; font=:bold, fontsize=18, tellwidth=false)
+    end
+
+    for row in 1:6
+        Label(fig[row, 0], envelope_row_labels[row];
+            rotation=π / 2, font=:bold, fontsize=14, tellheight=false)
+
+        for (ci, col) in enumerate(cols)
+            ax = Axis(fig[row, ci];
+                xlabel=row == 6 ? "Year" : "",
+                ylabel=ci == 1 ? envelope_row_ylabels[row] : ""
+            )
+            hlines!(ax, [0]; color=:black, linewidth=1)
+
+            for (o_i, option) in enumerate(option_names)
+                key = (row, col, option)
+                haskey(results, key) || continue
+                r = results[key]
+                band!(ax, years, r.p10, r.p90; color=(option_colors[o_i], 0.2))
+                lines!(ax, years, r.median; color=option_colors[o_i], linewidth=2)
+            end
+        end
+    end
+
+    _option_legend!(fig[1:6, 3], option_colors, option_labels)
+
+    fname = "robustness_envelope_n$(_sci(ps.N_seed))_l$(ps.n_locations).png"
     save(joinpath(pd_config["plot_output_path"], fname), fig; px_per_unit=2)
     @info "Saved $(fname)"
 end

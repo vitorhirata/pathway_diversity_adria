@@ -73,6 +73,26 @@ option_colors = [option_color_map[string(o)] for o in option_names]
 # Pretty option labels: "heat_stress" → "Heat stress"
 option_labels = [uppercasefirst(replace(string(o), "_" => " ")) for o in option_names]
 
+# ── Outcome-envelope time series — one 6×2 figure per parameter set ───────────
+#
+#   Time-series companion to Figures A/B/C: per starting option, the median + P10–P90 band (over
+#   downstream pathways) of the benefit vs counterfactual through the seeding window, for each of
+#   the 6 metric variants (rows) and worst-/best-case DHW selection (columns). One figure per
+#   parameter set. Independent of the Figures A/B/C loop below.
+
+envelope_param_sets = [
+    (N_seed=1e6, n_locations=300),
+    (N_seed=1e8, n_locations=300)
+]
+for ps in envelope_param_sets
+    years, results = envelope_timeseries(
+        rs, option_names, opt_metric_mats;
+        ps, dhw_scenarios=[2, 7, 10], tail_number, seed_years, horizon,
+        seed_year_start, pd_frequency, N_seed_weights
+    )
+    plot_envelope_timeseries(years, results, option_names, option_colors, option_labels, ps)
+end
+
 # ── Figures A/B/C — one set of figures per parameter set ──────────────────────
 #
 #   For each parameter set (dhw, N_seed, n_locations): group pathways by starting option, then
