@@ -58,7 +58,9 @@ param_sets = [
 
 # ── Compute per-reef metrics (parameter-independent) ──────────────────────────
 
-nyrs, ctac, cfd = reef_metrics(rs)
+# Read the (large) cover / diversity cubes once and share with every analysis below.
+base_metrics = load_base_metrics(rs)
+nyrs, ctac, cfd = reef_metrics(rs; base=base_metrics)
 opt_metric_mats = (nyrs, ctac, cfd)
 
 # Fixed colour per starting option, shared across all plots (first 5 Wong colors).
@@ -88,7 +90,7 @@ for ps in envelope_param_sets
     years, results = envelope_timeseries(
         rs, option_names, opt_metric_mats;
         ps, dhw_scenarios=[2, 7, 10], tail_number, seed_years, horizon,
-        seed_year_start, pd_frequency, N_seed_weights
+        seed_year_start, pd_frequency, N_seed_weights, base=base_metrics
     )
     plot_envelope_timeseries(years, results, option_names, option_colors, option_labels, ps)
 end

@@ -96,9 +96,12 @@ window_fd(fd_arr, window, s) = vec(sum(fd_arr[timesteps=window, scenarios=s].dat
 Three per-reef metrics for a ResultSet over a `horizon`-year window anchored at seed-start, each
 a `(n_locs, n_scenarios)` matrix. Used by the pathways analysis, which then compares columns
 against a counterfactual column.
+
+`base` is the [`load_base_metrics`] tuple; pass a precomputed one to avoid re-reading the (large)
+cover / diversity cubes when the caller also uses them elsewhere (e.g. `envelope_timeseries`).
 """
-function reef_metrics(result_set; horizon::Int=horizon)
-    m_tac, fd_arr, loc_hab_area_km2, seed_start = load_base_metrics(result_set)
+function reef_metrics(result_set; horizon::Int=horizon, base=load_base_metrics(result_set))
+    m_tac, fd_arr, loc_hab_area_km2, seed_start = base
     n_locs = size(result_set.seed_log, :locations)
     n_scens = nrow(result_set.inputs)
 
@@ -378,16 +381,19 @@ column `col` ∈ `:worst`/`:best` (DHW selection direction):
    ([`tail_series_vs_cf`]).
 3. Reduce the per-pathway curves pointwise to median / P10 / P90.
 
-`opt_metric_mats = (nyrs, ctac, cfd)` supplies the whole-horizon scalars (per [`reef_metrics`]).
-`years` is the window's calendar labels for the x-axis. Options with no pathways are omitted.
-The 6 rows are indexed 1–6 as `envelope_metric_types` × (`:worst`, `:best`).
+`opt_metric_mats = (nyrs, ctac, cfd)` supplies the whole-horizon scalars (per [`reef_metrics`]) for
+tail / DHW selection; the per-timestep trajectories come from the full cubes in `base` (the
+[`load_base_metrics`] tuple — pass the same one used for `opt_metric_mats` so the large cover /
+diversity cubes are read only once). `years` is the window's calendar labels for the x-axis.
+Options with no pathways are omitted. The 6 rows are indexed 1–6 as `envelope_metric_types` ×
+(`:worst`, `:best`).
 """
 function envelope_timeseries(
     rs, option_names, opt_metric_mats;
     ps, dhw_scenarios, tail_number, seed_years, horizon,
-    seed_year_start, pd_frequency, N_seed_weights
+    seed_year_start, pd_frequency, N_seed_weights, base=load_base_metrics(rs)
 )
-    m_tac, fd_arr, loc_hab_area_km2, seed_start = load_base_metrics(rs)
+    m_tac, fd_arr, loc_hab_area_km2, seed_start = base
     @assert seed_start + horizon - 1 <= size(m_tac, :timesteps) "Run too short for horizon $(horizon)."
     window = seed_start:(seed_start + horizon - 1)
     # Numeric calendar years for the x-axis, robust to Int / Date / string timestep coordinates.
